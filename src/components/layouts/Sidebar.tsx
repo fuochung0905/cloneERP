@@ -177,13 +177,6 @@ export const NAVIGATION_GROUPS: NavGroup[] = [
         screenCode: "M10",
         icon: CheckSquare,
       },
-      {
-        title: "Hiện trường 1 chạm (GPS)",
-        href: "/hien-truong",
-        screenCode: "M14",
-        icon: MapPin,
-        badge: "GPS",
-      },
     ],
   },
   {
@@ -204,6 +197,13 @@ export const NAVIGATION_GROUPS: NavGroup[] = [
     groupTitle: "ỨNG DỤNG MỞ RỘNG",
     icon: LayoutGrid,
     items: [
+      {
+        title: "Hiện trường 1 chạm (GPS)",
+        href: "/hien-truong",
+        screenCode: "M14",
+        icon: MapPin,
+        badge: "GPS",
+      },
       {
         title: "HRM - Quản trị Nhân sự & Lương",
         href: "/apps/hrm",

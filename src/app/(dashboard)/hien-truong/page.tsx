@@ -94,6 +94,10 @@ export default function FieldOpsMobilePage() {
   const [loading, setLoading] = React.useState(true);
   const [selectedTask, setSelectedTask] = React.useState<any | null>(null);
 
+  // Search & Filter State for Task List
+  const [searchKeyword, setSearchKeyword] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<"all" | "doing" | "awaiting_acceptance" | "done">("all");
+
   // Live GPS Tracking State
   const [userCoords, setUserCoords] = React.useState<UserCoordinates | null>(null);
   const [locatingUser, setLocatingUser] = React.useState(false);
@@ -132,6 +136,31 @@ export default function FieldOpsMobilePage() {
   const [isSpeechSupported, setIsSpeechSupported] = React.useState(true);
   const [submittingVoiceReport, setSubmittingVoiceReport] = React.useState(false);
   const recognitionRef = React.useRef<any>(null);
+
+  // Computed Filtered Tasks & Stats for Dashboard
+  const filteredTasks = React.useMemo(() => {
+    return tasks.filter((t) => {
+      const matchStatus = statusFilter === "all" ? true : t.status === statusFilter;
+      const matchSearch = searchKeyword.trim()
+        ? (
+            (t.title || "").toLowerCase().includes(searchKeyword.toLowerCase()) ||
+            (t.code || "").toLowerCase().includes(searchKeyword.toLowerCase()) ||
+            (t.projectName || "").toLowerCase().includes(searchKeyword.toLowerCase()) ||
+            (t.projectAddress || "").toLowerCase().includes(searchKeyword.toLowerCase())
+          )
+        : true;
+      return matchStatus && matchSearch;
+    });
+  }, [tasks, statusFilter, searchKeyword]);
+
+  const taskStats = React.useMemo(() => {
+    return {
+      total: tasks.length,
+      doing: tasks.filter((t) => t.status === "doing").length,
+      awaiting: tasks.filter((t) => t.status === "awaiting_acceptance").length,
+      done: tasks.filter((t) => t.status === "done").length,
+    };
+  }, [tasks]);
 
   useSetPageHeader({
     title: "Hiện Trường & Thi Công",
@@ -690,7 +719,7 @@ export default function FieldOpsMobilePage() {
     reader.readAsDataURL(file);
   };
 
-  // 3. Chữ ký số Canvas
+  // 3. Chữ ký số Canvas (Hỗ trợ chuột, bút cảm ứng & cảm ứng tay trên mọi màn hình)
   const startDrawing = (e: any) => {
     setIsDrawing(true);
     setHasSignature(true);
@@ -700,13 +729,20 @@ export default function FieldOpsMobilePage() {
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    const clientX = e.clientX !== undefined ? e.clientX : e.touches?.[0]?.clientX;
+    const clientY = e.clientY !== undefined ? e.clientY : e.touches?.[0]?.clientY;
+    if (clientX === undefined || clientY === undefined) return;
+
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.5;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#1e3a8a";
   };
 
@@ -718,8 +754,14 @@ export default function FieldOpsMobilePage() {
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    const scaleX = canvas.width / (rect.width || 1);
+    const scaleY = canvas.height / (rect.height || 1);
+    const clientX = e.clientX !== undefined ? e.clientX : e.touches?.[0]?.clientX;
+    const clientY = e.clientY !== undefined ? e.clientY : e.touches?.[0]?.clientY;
+    if (clientX === undefined || clientY === undefined) return;
+
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
 
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -930,181 +972,397 @@ export default function FieldOpsMobilePage() {
   };
 
   // ==========================================
-  // VIEW 1: DANH SÁCH VIỆC HÔM NAY (TASK LIST)
+  // ==========================================
+  // VIEW 1: DANH SÁCH VIỆC HÔM NAY (TASK LIST) - RESPONSIVE DASHBOARD
   // ==========================================
   if (currentScreen === "task_list") {
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-50 flex flex-col p-4 space-y-4">
-        {/* Top Header Thợ & GPS Bar */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                <HardHat className="w-6 h-6" />
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6">
+          {/* Top Header Thợ & GPS Live Bar */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+                  <HardHat className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-extrabold text-blue-600 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                      Thợ Hiện Trường Ca Hôm Nay
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">
+                      • {new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}
+                    </span>
+                  </div>
+                  <h1 className="text-lg sm:text-xl font-black text-slate-900 leading-tight mt-0.5">
+                    {employee?.name || "Nguyễn Văn Thợ"}
+                  </h1>
+                </div>
               </div>
-              <div>
-                <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider">
-                  Thợ Hiện Trường Ca Hôm Nay
-                </span>
-                <h1 className="text-base font-extrabold text-slate-900 leading-tight">
-                  {employee?.name || "Nguyễn Văn Thợ"}
-                </h1>
+
+              <div className="flex items-center gap-2 sm:self-center">
+                <Link
+                  href="/cong-viec"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-blue-600 bg-slate-100 hover:bg-slate-200/80 rounded-xl transition"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Bàn điều hành việc &rarr;</span>
+                </Link>
               </div>
             </div>
-            <Link
-              href="/cong-viec"
-              className="text-xs font-semibold text-slate-500 hover:text-slate-800 p-2"
-            >
-              Tất cả việc &rarr;
-            </Link>
+
+            {/* Vị trí GPS hiện tại của thợ */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50/80 px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-2.5 h-2.5 rounded-full ${userCoords ? "bg-emerald-500 animate-pulse ring-4 ring-emerald-100" : "bg-amber-500"} shrink-0`} />
+                <div className="truncate">
+                  {userCoords ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold text-slate-700">Tọa độ thiết bị:</span>
+                      <span className="font-mono text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        📍 {userCoords.latitude.toFixed(5)}, {userCoords.longitude.toFixed(5)}
+                      </span>
+                      <span className="text-slate-400 text-[11px] font-medium">
+                        (Độ chính xác: ±{userCoords.accuracy}m)
+                      </span>
+                    </div>
+                  ) : locatingUser ? (
+                    <span className="text-slate-500 italic">Đang quét sóng vệ tinh GPS...</span>
+                  ) : (
+                    <span className="text-amber-700 font-medium">Chưa kết nối GPS vệ tinh</span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshUserLocation(false)}
+                disabled={locatingUser}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold border border-slate-200 rounded-lg text-xs transition shrink-0 active:scale-95 shadow-2xs"
+                title="Làm mới tọa độ GPS"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${locatingUser ? "animate-spin text-blue-600" : "text-slate-500"}`} />
+                <span>{locatingUser ? "Đang quét..." : "Làm mới GPS"}</span>
+              </button>
+            </div>
           </div>
 
-          {/* Vị trí GPS hiện tại của thợ */}
-          <div className="flex items-center justify-between bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className={`w-2 h-2 rounded-full ${userCoords ? "bg-emerald-500 animate-pulse" : "bg-amber-500"} shrink-0`} />
-              <div className="truncate">
-                {userCoords ? (
-                  <span className="font-mono text-[11px] text-slate-700 font-semibold">
-                    📍 GPS: {userCoords.latitude.toFixed(4)}, {userCoords.longitude.toFixed(4)} (±{userCoords.accuracy}m)
-                  </span>
-                ) : locatingUser ? (
-                  <span className="text-slate-500 italic">Đang quét vị trí vệ tinh...</span>
-                ) : (
-                  <span className="text-amber-700 font-medium">Chưa kết nối GPS</span>
-                )}
-              </div>
-            </div>
+          {/* Metric KPI Summary Cards Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <button
-              onClick={() => refreshUserLocation(false)}
-              disabled={locatingUser}
-              className="p-1.5 text-slate-600 hover:text-blue-600 rounded-lg hover:bg-white transition shrink-0"
-              title="Làm mới tọa độ GPS"
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`p-3.5 sm:p-4 rounded-2xl border text-left transition active:scale-[0.99] ${
+                statusFilter === "all"
+                  ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100"
+                  : "bg-white text-slate-800 border-slate-200/90 hover:border-slate-300"
+              }`}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${locatingUser ? "animate-spin text-blue-600" : ""}`} />
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === "all" ? "text-blue-100" : "text-slate-500"}`}>
+                  Tất cả việc
+                </span>
+                <Layers className={`w-4 h-4 ${statusFilter === "all" ? "text-blue-200" : "text-slate-400"}`} />
+              </div>
+              <p className="text-2xl sm:text-3xl font-black mt-1">{taskStats.total}</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("doing")}
+              className={`p-3.5 sm:p-4 rounded-2xl border text-left transition active:scale-[0.99] ${
+                statusFilter === "doing"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-100"
+                  : "bg-white text-slate-800 border-slate-200/90 hover:border-slate-300"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === "doing" ? "text-amber-100" : "text-amber-600"}`}>
+                  Đang làm
+                </span>
+                <Clock className={`w-4 h-4 ${statusFilter === "doing" ? "text-amber-200" : "text-amber-500"}`} />
+              </div>
+              <p className="text-2xl sm:text-3xl font-black mt-1">{taskStats.doing}</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("awaiting_acceptance")}
+              className={`p-3.5 sm:p-4 rounded-2xl border text-left transition active:scale-[0.99] ${
+                statusFilter === "awaiting_acceptance"
+                  ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
+                  : "bg-white text-slate-800 border-slate-200/90 hover:border-slate-300"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === "awaiting_acceptance" ? "text-indigo-100" : "text-indigo-600"}`}>
+                  Chờ nghiệm thu
+                </span>
+                <FileCheck className={`w-4 h-4 ${statusFilter === "awaiting_acceptance" ? "text-indigo-200" : "text-indigo-500"}`} />
+              </div>
+              <p className="text-2xl sm:text-3xl font-black mt-1">{taskStats.awaiting}</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("done")}
+              className={`p-3.5 sm:p-4 rounded-2xl border text-left transition active:scale-[0.99] ${
+                statusFilter === "done"
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-100"
+                  : "bg-white text-slate-800 border-slate-200/90 hover:border-slate-300"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-bold uppercase tracking-wider ${statusFilter === "done" ? "text-emerald-100" : "text-emerald-600"}`}>
+                  Hoàn thành
+                </span>
+                <CheckCircle2 className={`w-4 h-4 ${statusFilter === "done" ? "text-emerald-200" : "text-emerald-500"}`} />
+              </div>
+              <p className="text-2xl sm:text-3xl font-black mt-1">{taskStats.done}</p>
             </button>
           </div>
-        </div>
 
-        {/* Tiêu đề danh sách */}
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-blue-600" />
-            Việc Hiện Trường Được Giao ({tasks.length})
-          </h2>
-          <span className="text-xs text-slate-500">Chạm để mở Bàn Điều Khiển</span>
-        </div>
-
-        {/* Danh sách thẻ công việc */}
-        <div className="space-y-3 flex-1">
-          {loading ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400 animate-pulse">
-              Đang tải danh sách việc hiện trường...
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-500">
-              Chưa có công việc hiện trường nào có lịch hẹn. Hãy liên hệ Chỉ Huy Trưởng!
-            </div>
-          ) : (
-            tasks.map((t) => {
-              const hasGps = Boolean(t.projectLat && t.projectLon);
-              const distanceMeters =
-                userCoords && hasGps
-                  ? calculateDistanceMeters(
-                      userCoords.latitude,
-                      userCoords.longitude,
-                      t.projectLat,
-                      t.projectLon
-                    )
-                  : null;
-
-              return (
-                <div
-                  key={t.id}
-                  className="bg-white p-4 rounded-2xl border-2 border-slate-200 hover:border-blue-500 active:scale-[0.99] transition cursor-pointer shadow-xs space-y-2.5"
-                  onClick={() => {
-                    setSelectedTask(t);
-                    setCurrentScreen("action_hub");
-                  }}
+          {/* Search Bar & Filter Controls */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Input
+                type="text"
+                placeholder="Tìm việc theo tên, mã việc, dự án hoặc địa chỉ..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                className="pl-9 pr-8 text-xs bg-slate-50/70 border-slate-200 focus:bg-white h-10 rounded-xl"
+              />
+              {searchKeyword && (
+                <button
+                  type="button"
+                  onClick={() => setSearchKeyword("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
-                      {t.code}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {hasGps ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <Navigation className="w-2.5 h-2.5" /> Có GPS
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          <MapPin className="w-2.5 h-2.5" /> Chưa ghim GPS
-                        </span>
-                      )}
-                      {getStatusBadge(t.status)}
-                    </div>
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 shrink-0">
+              <button
+                type="button"
+                onClick={() => setStatusFilter("all")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                  statusFilter === "all"
+                    ? "bg-slate-900 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Tất cả ({taskStats.total})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("doing")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                  statusFilter === "doing"
+                    ? "bg-amber-600 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Đang làm ({taskStats.doing})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("awaiting_acceptance")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                  statusFilter === "awaiting_acceptance"
+                    ? "bg-indigo-600 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Chờ nghiệm thu ({taskStats.awaiting})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter("done")}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                  statusFilter === "done"
+                    ? "bg-emerald-600 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Hoàn thành ({taskStats.done})
+              </button>
+            </div>
+          </div>
+
+          {/* Grid Danh sách thẻ công việc */}
+          <div>
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="p-6 bg-white rounded-2xl border border-slate-200 shadow-xs animate-pulse space-y-3">
+                    <div className="h-4 bg-slate-200 rounded w-1/3" />
+                    <div className="h-6 bg-slate-200 rounded w-3/4" />
+                    <div className="h-12 bg-slate-100 rounded" />
                   </div>
-
-                  <h3 className="font-bold text-slate-900 text-base leading-snug">
-                    {t.title}
-                  </h3>
-
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Hẹn: {t.dueAt ? new Date(t.dueAt).toLocaleDateString("vi-VN") : "Hôm nay"}</span>
-                    </div>
-                    <span className="font-mono font-bold text-blue-600">
-                      Tiến độ: {t.progressPercent || 0}%
-                    </span>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                    <div className="flex items-start gap-1.5 min-w-0">
-                      <MapPin className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
-                      <span className="font-medium line-clamp-2">
-                        {t.projectAddress || t.projectName}
-                      </span>
-                    </div>
-                    {distanceMeters !== null && (
-                      <span className={`shrink-0 font-bold font-mono text-[11px] px-2 py-1 rounded-md ${
-                        distanceMeters <= 500 ? "text-emerald-700 bg-emerald-100" : "text-amber-700 bg-amber-100"
-                      }`}>
-                        Cách {formatDistance(distanceMeters)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Thanh nút mở nhanh */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenNavigation(t);
-                      }}
-                      className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition"
-                    >
-                      <Compass className="w-3.5 h-3.5" />
-                      <span>Dẫn đường Google Maps</span>
-                    </button>
-
-                    <div className="flex items-center gap-1 text-blue-600 font-bold">
-                      <span>Bàn Điều Khiển</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </div>
+                ))}
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <Layers className="w-6 h-6" />
                 </div>
-              );
-            })
-          )}
+                <h3 className="text-sm font-bold text-slate-700">
+                  {tasks.length === 0
+                    ? "Chưa có công việc hiện trường nào được giao hôm nay."
+                    : "Không tìm thấy công việc nào khớp với bộ lọc."}
+                </h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  {tasks.length === 0
+                    ? "Hãy liên hệ Chỉ Huy Trưởng hoặc người điều phối để nhận việc thi công."
+                    : "Thử xóa từ khóa tìm kiếm hoặc chọn bộ lọc trạng thái khác."}
+                </p>
+                {searchKeyword && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchKeyword("");
+                      setStatusFilter("all");
+                    }}
+                  >
+                    Xóa bộ lọc tìm kiếm
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5">
+                {filteredTasks.map((t) => {
+                  const hasGps = Boolean(t.projectLat && t.projectLon);
+                  const distanceMeters =
+                    userCoords && hasGps
+                      ? calculateDistanceMeters(
+                          userCoords.latitude,
+                          userCoords.longitude,
+                          t.projectLat,
+                          t.projectLon
+                        )
+                      : null;
+
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTask(t);
+                        setCurrentScreen("action_hub");
+                      }}
+                      className="group bg-white p-4 sm:p-5 rounded-2xl border-2 border-slate-200 hover:border-blue-500 hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between space-y-3.5 active:scale-[0.99]"
+                    >
+                      {/* Card Header: Code & Badges */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                          {t.code}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {hasGps ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              <Navigation className="w-2.5 h-2.5" /> Có GPS
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                              <MapPin className="w-2.5 h-2.5" /> Chưa ghim GPS
+                            </span>
+                          )}
+                          {getStatusBadge(t.status)}
+                        </div>
+                      </div>
+
+                      {/* Card Body: Title & Project */}
+                      <div className="space-y-1">
+                        <h3 className="font-extrabold text-slate-900 text-base group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug">
+                          {t.title}
+                        </h3>
+                        {t.projectName && (
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                            <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate">{t.projectName}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Progress Bar & Schedule */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs text-slate-500">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Hẹn: {t.dueAt ? new Date(t.dueAt).toLocaleDateString("vi-VN") : "Hôm nay"}</span>
+                          </div>
+                          <span className="font-mono font-bold text-blue-600 text-[11px]">
+                            Tiến độ: {t.progressPercent || 0}%
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              (t.progressPercent || 0) >= 100
+                                ? "bg-emerald-500"
+                                : (t.progressPercent || 0) >= 50
+                                ? "bg-blue-600"
+                                : "bg-amber-500"
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(0, t.progressPercent || 0))}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Project Address & Distance Pill */}
+                      <div className="flex items-start justify-between gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div className="flex items-start gap-1.5 min-w-0">
+                          <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          <span className="font-medium line-clamp-2 text-slate-700">
+                            {t.projectAddress || t.projectName || "Chưa có địa chỉ công trình"}
+                          </span>
+                        </div>
+                        {distanceMeters !== null && (
+                          <span className={`shrink-0 font-bold font-mono text-[11px] px-2 py-1 rounded-md ${
+                            distanceMeters <= 500 ? "text-emerald-700 bg-emerald-100 border border-emerald-200" : "text-amber-700 bg-amber-100 border border-amber-200"
+                          }`}>
+                            Cách {formatDistance(distanceMeters)}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Card Footer: Quick Actions */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenNavigation(t);
+                          }}
+                          className="inline-flex items-center gap-1.5 font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition shrink-0"
+                          title="Mở Google Maps chỉ đường"
+                        >
+                          <Compass className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Dẫn đường</span>
+                        </button>
+
+                        <div className="inline-flex items-center gap-1 text-blue-600 font-extrabold group-hover:translate-x-0.5 transition-transform">
+                          <span>Bàn Điều Khiển</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
   }
 
   // ==========================================
-  // VIEW 2: BÀN ĐIỀU KHIỂN 1 CHẠM (ACTION HUB)
+  // VIEW 2: BÀN ĐIỀU KHIỂN 1 CHẠM (ACTION HUB) - RESPONSIVE WORKSPACE
   // ==========================================
   if (currentScreen === "action_hub") {
     const hasProjectGps = Boolean(selectedTask?.projectLat && selectedTask?.projectLon);
@@ -1119,235 +1377,310 @@ export default function FieldOpsMobilePage() {
         : null;
 
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-100 flex flex-col p-4 space-y-4">
-        {/* Nút Quay Lại & Header Task */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setCurrentScreen("task_list")}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 px-3 py-1.5 rounded-lg active:scale-95 transition"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Đổi việc khác
-            </button>
-            <span className="font-mono text-xs font-bold text-blue-600">
-              {selectedTask?.code}
-            </span>
-          </div>
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6">
+          {/* Top Bar Navigation & Header */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setCurrentScreen("task_list")}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl active:scale-95 transition shrink-0"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Danh sách việc</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+                  {selectedTask?.code}
+                </span>
+                {getStatusBadge(selectedTask?.status)}
+              </div>
+            </div>
 
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900 leading-tight">
-              {selectedTask?.title}
-            </h2>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-              <MapPin className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
-              <span className="truncate">{selectedTask?.projectAddress || selectedTask?.projectName}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">Bàn Điều Khiển Thi Công Hiện Trường</span>
             </div>
           </div>
 
-          {/* Khối Thông tin Vị trí & Dẫn đường công trình */}
-          <div className="bg-gradient-to-br from-slate-50 to-blue-50/50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-blue-600" />
-                <span className="font-bold text-slate-800">Tọa độ công trình:</span>
+          {/* 2-Column Split Layout on Desktop / Laptop */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+            {/* CỘT TRÁI: THÔNG TIN DỰ ÁN & TỌA ĐỘ VỆ TINH */}
+            <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-4">
+              {/* Thẻ Chi tiết Công trình & Tiến độ */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-extrabold text-blue-600 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                    Công việc hiện tại
+                  </span>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                    {selectedTask?.title}
+                  </h2>
+                  {selectedTask?.projectName && (
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                      <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>{selectedTask.projectName}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <span className="font-medium leading-relaxed">
+                    {selectedTask?.projectAddress || selectedTask?.projectName || "Chưa có địa chỉ công trình"}
+                  </span>
+                </div>
+
+                {/* Khối Tiến độ & Đổi trạng thái */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-semibold">Tiến độ thi công:</span>
+                    <span className="font-mono font-bold text-blue-600">
+                      {selectedTask?.progressPercent || 0}%
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        (selectedTask?.progressPercent || 0) >= 100
+                          ? "bg-emerald-500"
+                          : (selectedTask?.progressPercent || 0) >= 50
+                          ? "bg-blue-600"
+                          : "bg-amber-500"
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(0, selectedTask?.progressPercent || 0))}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1.5">
+                    <button
+                      type="button"
+                      disabled={selectedTask?.status === "doing"}
+                      onClick={() => handleUpdateTaskStatus(selectedTask?.id, "doing", 50)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition border active:scale-95 ${
+                        selectedTask?.status === "doing"
+                          ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      Đang làm
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedTask?.status === "awaiting_acceptance"}
+                      onClick={() => handleUpdateTaskStatus(selectedTask?.id, "awaiting_acceptance", 100)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition border active:scale-95 ${
+                        selectedTask?.status === "awaiting_acceptance"
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      Chờ nghiệm thu
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedTask?.status === "done"}
+                      onClick={() => handleUpdateTaskStatus(selectedTask?.id, "done", 100)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold transition border active:scale-95 ${
+                        selectedTask?.status === "done"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      Hoàn thành
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                {hasProjectGps ? (
-                  <span className="font-mono text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    {Number(selectedTask.projectLat).toFixed(5)}, {Number(selectedTask.projectLon).toFixed(5)}
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Chưa lưu tọa độ vệ tinh
-                  </span>
+
+              {/* Thẻ Vị trí GPS & Radar Dẫn đường */}
+              <div className="bg-gradient-to-br from-slate-900 to-slate-950 text-white p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm space-y-3.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="font-extrabold uppercase tracking-wider text-[11px] text-slate-300">
+                      Tọa độ công trình
+                    </span>
+                  </div>
+                  {hasProjectGps ? (
+                    <span className="font-mono text-[11px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                      {Number(selectedTask.projectLat).toFixed(5)}, {Number(selectedTask.projectLon).toFixed(5)}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-amber-400 font-medium bg-amber-950/50 px-2 py-0.5 rounded border border-amber-800">
+                      Chưa ghim tọa độ
+                    </span>
+                  )}
+                </div>
+
+                {distanceMeters !== null && (
+                  <div className={`p-2.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                    distanceMeters <= 500
+                      ? "bg-emerald-950/50 border-emerald-700 text-emerald-300"
+                      : "bg-amber-950/50 border-amber-700 text-amber-300"
+                  }`}>
+                    <span>Khoảng cách đến vị trí:</span>
+                    <span>
+                      {formatDistance(distanceMeters)} {distanceMeters <= 500 ? "(Ở tại công trình ✓)" : "(Đang trên đường)"}
+                    </span>
+                  </div>
                 )}
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenNavigation(selectedTask)}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-xs active:scale-95 transition"
+                  >
+                    <Compass className="w-4 h-4" />
+                    <span>Dẫn đường Google Maps</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditLocationModal(selectedTask)}
+                    className="inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition"
+                    title="Cập nhật vị trí & tọa độ công trình"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Sửa vị trí</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* CỘT PHẢI: LƯỚI 5 NÚT BẤM SIÊU TO 1 CHẠM */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                    5 Tác Vụ Thi Công 1 Chạm Tại Hiện Trường
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Thao tác nhanh chóng, tối ưu cho thợ tay dính găng/dầu mỡ
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
+                {/* Nút 1: Check-in GPS */}
                 <button
                   type="button"
-                  onClick={() => handleOpenEditLocationModal(selectedTask)}
-                  className="p-1 text-slate-500 hover:text-blue-600 hover:bg-white rounded transition"
-                  title="Chỉnh sửa tọa độ thủ công"
+                  onClick={() => setCurrentScreen("gps_view")}
+                  className="bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between active:scale-[0.98] transition min-h-[130px] sm:min-h-[140px] text-left group"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
+                  <div className="flex items-center justify-between w-full">
+                    <div className="p-3 bg-white/20 rounded-xl group-hover:scale-110 transition-transform">
+                      <Navigation className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded-full text-white/90">
+                      Bước 1
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm sm:text-base font-black tracking-tight">1. ĐIỂM DANH GPS</p>
+                    <p className="text-xs text-blue-100 font-medium mt-0.5">
+                      {distanceMeters !== null
+                        ? `Khoảng cách: ${formatDistance(distanceMeters)} · Bán kính < 500m`
+                        : "Xác thực vệ tinh bán kính < 500m"}
+                    </p>
+                  </div>
+                </button>
+
+                {/* Nút 2: Chụp ảnh Watermark */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWatermarkedImage(null);
+                    setCurrentScreen("camera_view");
+                  }}
+                  className="bg-gradient-to-br from-slate-900 to-slate-800 hover:bg-slate-950 text-white rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between active:scale-[0.98] transition min-h-[130px] sm:min-h-[140px] text-left group"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="p-3 bg-white/10 rounded-xl group-hover:scale-110 transition-transform">
+                      <Camera className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase bg-white/10 px-2 py-0.5 rounded-full text-slate-300">
+                      Bước 2
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm sm:text-base font-black tracking-tight">2. CHỤP ẢNH IN CHÌM</p>
+                    <p className="text-xs text-slate-300 font-medium mt-0.5">
+                      Live Viewfinder · In chìm GPS & Giờ
+                    </p>
+                  </div>
+                </button>
+
+                {/* Nút 3: Báo cáo giọng nói AI */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentScreen("voice_view")}
+                  className="bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between active:scale-[0.98] transition min-h-[130px] sm:min-h-[140px] text-left group"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="p-3 bg-white/20 rounded-xl group-hover:scale-110 transition-transform">
+                      <Mic className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded-full text-white/90">
+                      Bước 3
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm sm:text-base font-black tracking-tight">3. BÁO CÁO GIỌNG NÓI</p>
+                    <p className="text-xs text-amber-100 font-medium mt-0.5">
+                      AI nhận diện tiếng Việt chuyển thành nhật ký
+                    </p>
+                  </div>
+                </button>
+
+                {/* Nút 4: Ký số nghiệm thu */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentScreen("signature_view")}
+                  className="bg-gradient-to-br from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between active:scale-[0.98] transition min-h-[130px] sm:min-h-[140px] text-left group"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="p-3 bg-white/20 rounded-xl group-hover:scale-110 transition-transform">
+                      <FileCheck className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase bg-white/20 px-2 py-0.5 rounded-full text-white/90">
+                      Bước 4
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm sm:text-base font-black tracking-tight">4. KÝ SỐ NGHIỆM THU</p>
+                    <p className="text-xs text-emerald-100 font-medium mt-0.5">
+                      Khách hàng ký cảm ứng trực tiếp tại chỗ
+                    </p>
+                  </div>
+                </button>
+
+                {/* Nút 5: Cấp vật tư xe */}
+                <button
+                  type="button"
+                  onClick={() => setCurrentScreen("materials_view")}
+                  className="sm:col-span-2 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between active:scale-[0.98] transition text-left group"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform">
+                      <Truck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
+                        5. VẬT TƯ MANG THEO XE
+                      </p>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Kiểm kê 5 mục vật tư xuất kho M09 mang đến công trình
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               </div>
             </div>
-
-            {distanceMeters !== null && (
-              <div className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-slate-200">
-                <span className="text-slate-600">Khoảng cách hiện tại:</span>
-                <span className={`font-mono font-extrabold ${distanceMeters <= 500 ? "text-emerald-600" : "text-amber-600"}`}>
-                  {formatDistance(distanceMeters)} {distanceMeters <= 500 ? "(Ở tại công trình ✓)" : "(Đang trên đường)"}
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => handleOpenNavigation(selectedTask)}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs active:scale-95 transition"
-              >
-                <Compass className="w-4 h-4" />
-                <span>Dẫn đường Google Maps</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleOpenEditLocationModal(selectedTask)}
-                className="inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 active:scale-95 transition"
-                title="Cập nhật vị trí & tọa độ công trình"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-                <span>Sửa vị trí</span>
-              </button>
-            </div>
           </div>
-
-          {/* Dòng trạng thái & chuyển nhanh trạng thái */}
-          <div className="pt-2 border-t border-slate-100 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500 font-medium">Trạng thái:</span>
-                {getStatusBadge(selectedTask?.status)}
-              </div>
-              <span className="font-mono font-bold text-blue-600">
-                Tiến độ: {selectedTask?.progressPercent || 0}%
-              </span>
-            </div>
-
-            {/* Chuyển nhanh trạng thái thi công */}
-            <div className="flex items-center gap-1.5 pt-0.5">
-              <button
-                disabled={selectedTask?.status === "doing"}
-                onClick={() => handleUpdateTaskStatus(selectedTask?.id, "doing", 50)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition border ${
-                  selectedTask?.status === "doing"
-                    ? "bg-amber-100 text-amber-800 border-amber-300"
-                    : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                Đang làm
-              </button>
-              <button
-                disabled={selectedTask?.status === "awaiting_acceptance"}
-                onClick={() => handleUpdateTaskStatus(selectedTask?.id, "awaiting_acceptance", 100)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition border ${
-                  selectedTask?.status === "awaiting_acceptance"
-                    ? "bg-blue-100 text-blue-800 border-blue-300"
-                    : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                Chờ nghiệm thu
-              </button>
-              <button
-                disabled={selectedTask?.status === "done"}
-                onClick={() => handleUpdateTaskStatus(selectedTask?.id, "done", 100)}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition border ${
-                  selectedTask?.status === "done"
-                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                    : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                Hoàn thành
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* LƯỚI 5 NÚT BẤM SIÊU TO (BIG ACTION BUTTONS) */}
-        <div className="space-y-3 flex-1">
-          {/* Nút 1: Check-in GPS */}
-          <button
-            onClick={() => setCurrentScreen("gps_view")}
-            className="w-full h-20 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3.5 text-left">
-              <div className="p-3 bg-white/20 rounded-xl">
-                <Navigation className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide">1. ĐIỂM DANH GPS TỌA ĐỘ</p>
-                <p className="text-xs text-blue-100 font-medium mt-0.5">
-                  {distanceMeters !== null
-                    ? `Khoảng cách: ${formatDistance(distanceMeters)} · Bán kính < 500m`
-                    : "Xác thực vệ tinh bán kính < 500m"}
-                </p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-white/70" />
-          </button>
-
-          {/* Nút 2: Chụp ảnh Watermark */}
-          <button
-            onClick={() => {
-              setWatermarkedImage(null);
-              setCurrentScreen("camera_view");
-            }}
-            className="w-full h-20 bg-gradient-to-r from-slate-900 to-slate-800 hover:bg-slate-950 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3.5 text-left">
-              <div className="p-3 bg-white/10 rounded-xl">
-                <Camera className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide">2. CHỤP ẢNH IN CHÌM WATERMARK</p>
-                <p className="text-xs text-slate-300 font-medium mt-0.5">Live Camera Viewfinder · In chìm GPS & Giờ</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-white/70" />
-          </button>
-
-          {/* Nút 3: Báo cáo giọng nói AI */}
-          <button
-            onClick={() => setCurrentScreen("voice_view")}
-            className="w-full h-20 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3.5 text-left">
-              <div className="p-3 bg-white/20 rounded-xl">
-                <Mic className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide">3. BÁO CÁO GIỌNG NÓI AI</p>
-                <p className="text-xs text-amber-100 font-medium mt-0.5">Nói để AI tự động chuyển thành báo cáo ca</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-white/70" />
-          </button>
-
-          {/* Nút 4: Ký số nghiệm thu trực tiếp */}
-          <button
-            onClick={() => setCurrentScreen("signature_view")}
-            className="w-full h-20 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3.5 text-left">
-              <div className="p-3 bg-white/20 rounded-xl">
-                <FileCheck className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide">4. KÝ SỐ NGHIỆM THU TẠI CHỖ</p>
-                <p className="text-xs text-emerald-100 font-medium mt-0.5">Khách hàng ký cảm ứng trực tiếp trên màn hình</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-white/70" />
-          </button>
-
-          {/* Nút 5: Cấp vật tư xe */}
-          <button
-            onClick={() => setCurrentScreen("materials_view")}
-            className="w-full h-20 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-200 rounded-2xl p-4 shadow-xs flex items-center justify-between active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3.5 text-left">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                <Truck className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide text-slate-900">5. VẬT TƯ MANG THEO XE</p>
-                <p className="text-xs text-slate-500 font-medium mt-0.5">Kiểm kê 5 mục vật tư cấp từ Kho M09</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-slate-400" />
-          </button>
         </div>
 
         {/* Modal Chỉnh sửa Tọa độ & Địa chỉ Công trình */}
@@ -1490,7 +1823,7 @@ export default function FieldOpsMobilePage() {
   }
 
   // ==========================================
-  // VIEW 3: SINGLE-FOCUS GPS CHECK-IN & RADAR
+  // VIEW 3: SINGLE-FOCUS GPS CHECK-IN & RADAR - RESPONSIVE VIEW
   // ==========================================
   if (currentScreen === "gps_view") {
     const hasProjectGps = Boolean(selectedTask?.projectLat && selectedTask?.projectLon);
@@ -1507,205 +1840,219 @@ export default function FieldOpsMobilePage() {
     const isWithinRadius = distanceMeters !== null ? distanceMeters <= 500 : null;
 
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-50 flex flex-col p-4 space-y-4">
-        {/* Header Task */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setCurrentScreen("action_hub")}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 px-3 py-2 rounded-xl active:scale-95 shadow-xs"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Về Bàn Điều Khiển
-          </button>
-          <Badge variant="info">GPS 🛰️</Badge>
-        </div>
-
-        {/* Khối Thẻ Vệ Tinh Radar */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="text-center space-y-1">
-            <div className="w-14 h-14 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-inner">
-              <Navigation className="w-7 h-7" />
-            </div>
-            <h2 className="text-lg font-black text-slate-900">ĐIỂM DANH TỌA ĐỘ VỆ TINH</h2>
-            <p className="text-xs text-slate-500">
-              Kiểm tra vị trí và khoảng cách đến công trình <br />
-              <strong className="text-slate-800">{selectedTask?.projectName}</strong>
-            </p>
-          </div>
-
-          {/* Bảng so sánh Tọa độ Thợ & Tọa độ Công trình */}
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5 text-xs">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-slate-500 block font-medium">Vị trí của bạn:</span>
-                {userCoords ? (
-                  <span className="font-mono font-bold text-slate-900 block">
-                    {userCoords.latitude.toFixed(6)}, {userCoords.longitude.toFixed(6)}
-                  </span>
-                ) : locatingUser ? (
-                  <span className="text-slate-400 italic">Đang bắt tín hiệu vệ tinh...</span>
-                ) : (
-                  <span className="text-rose-600 font-medium">Chưa có tín hiệu GPS</span>
-                )}
-                {userCoords && (
-                  <span className="text-[11px] text-slate-400 block">Độ chính xác: ±{userCoords.accuracy}m</span>
-                )}
-              </div>
-              <button
-                onClick={() => refreshUserLocation(false)}
-                disabled={locatingUser}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded-lg text-[11px] active:scale-95 transition"
-              >
-                <RefreshCw className={`w-3 h-3 ${locatingUser ? "animate-spin text-blue-600" : ""}`} />
-                Dò lại
-              </button>
-            </div>
-
-            <div className="border-t border-slate-200/80 pt-2 flex items-start justify-between">
-              <div>
-                <span className="text-slate-500 block font-medium">Tọa độ công trình:</span>
-                {hasProjectGps ? (
-                  <span className="font-mono font-bold text-blue-700 block">
-                    {Number(selectedTask.projectLat).toFixed(6)}, {Number(selectedTask.projectLon).toFixed(6)}
-                  </span>
-                ) : (
-                  <span className="text-amber-700 font-semibold block">Chưa ghim tọa độ dự án</span>
-                )}
-                <span className="text-[11px] text-slate-500 truncate max-w-[190px] block">
-                  {selectedTask?.projectAddress || selectedTask?.projectName}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => handleOpenEditLocationModal(selectedTask)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-semibold border border-slate-300 rounded-lg text-[11px] transition shadow-2xs"
-                  title="Chỉnh sửa vị trí / tọa độ công trình"
-                >
-                  <Edit3 className="w-3 h-3 text-slate-600" />
-                  <span>Sửa tọa độ</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Trạng thái Khoảng cách thực tế */}
-            {distanceMeters !== null && (
-              <div
-                className={`p-2.5 rounded-lg border flex items-center justify-between font-bold ${
-                  isWithinRadius
-                    ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-                    : "bg-amber-50 text-amber-900 border-amber-200"
-                }`}
-              >
-                <span>Khoảng cách:</span>
-                <span>
-                  {formatDistance(distanceMeters)} {isWithinRadius ? "(Hợp lệ < 500m ✓)" : "(Vượt bán kính > 500m ⚠️)"}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Cảnh báo khoảng cách nếu xa công trình */}
-          {distanceMeters !== null && distanceMeters > 500 && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-1 text-amber-900">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Cảnh báo khoảng cách điểm danh</p>
-                  <p className="text-[11px] text-amber-800">
-                    Bạn đang cách công trình {formatDistance(distanceMeters)} (vượt quá bán kính 500m hợp lệ). Vui lòng di chuyển đến công trình để điểm danh hoặc liên hệ quản lý dự án nếu tọa độ công trình cần hiệu chỉnh.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Visual Radar Card & Link Google Maps */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-900 to-slate-950 text-white space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                <span className="font-bold tracking-wide uppercase text-[11px] text-slate-300">Radar Vệ Tinh Trực Tuyến</span>
-              </div>
-              <span className="font-mono text-[11px] text-slate-400">
-                {userCoords ? `±${userCoords.accuracy}m` : "Dò sóng"}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-around py-2 border-y border-slate-800 text-center">
-              <div>
-                <p className="text-[10px] text-slate-400 uppercase font-bold">Vị trí của bạn</p>
-                <p className="font-mono text-xs font-bold text-emerald-400 mt-0.5">
-                  {userCoords ? `${userCoords.latitude.toFixed(4)}, ${userCoords.longitude.toFixed(4)}` : "Chưa có"}
-                </p>
-              </div>
-              <div className="w-px h-8 bg-slate-800" />
-              <div>
-                <p className="text-[10px] text-slate-400 uppercase font-bold">Công trình</p>
-                <p className="font-mono text-xs font-bold text-blue-400 mt-0.5">
-                  {hasProjectGps ? `${Number(selectedTask.projectLat).toFixed(4)}, ${Number(selectedTask.projectLon).toFixed(4)}` : "Chưa lưu"}
-                </p>
-              </div>
-            </div>
-
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto space-y-5">
+          {/* Header Navigation */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between">
             <button
               type="button"
-              onClick={() => handleOpenNavigation(selectedTask)}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
+              onClick={() => setCurrentScreen("action_hub")}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl active:scale-95 transition"
             >
-              <Compass className="w-4 h-4" />
-              <span>Mở Bản Đồ Dẫn Đường Google Maps</span>
-              <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+              <ArrowLeft className="w-4 h-4" />
+              <span>Về Bàn Điều Khiển</span>
             </button>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+                {selectedTask?.code}
+              </span>
+              <Badge variant="info">GPS 🛰️</Badge>
+            </div>
           </div>
 
-          {/* 2 Nút Điểm danh Check-in & Check-out */}
-          <div className="space-y-2.5 pt-1">
-            <button
-              disabled={checkingIn}
-              onClick={() => handleGpsCheckIn("check_in")}
-              className="w-full h-15 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
-            >
-              <Navigation className="w-5 h-5" />
-              <span>{checkingIn ? "Đang gửi tọa độ GPS..." : "BẤM CHECK-IN VÀO CA"}</span>
-            </button>
+          {/* 2-Column Responsive Layout */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+            {/* Cột Trái: Visual Radar Card & Dẫn đường */}
+            <div className="space-y-4">
+              <div className="p-5 rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 text-white space-y-4 shadow-sm">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="font-extrabold tracking-wide uppercase text-[11px] text-slate-300">
+                      Radar Vệ Tinh Trực Tuyến
+                    </span>
+                  </div>
+                  <span className="font-mono text-[11px] text-slate-400">
+                    {userCoords ? `±${userCoords.accuracy}m` : "Dò sóng"}
+                  </span>
+                </div>
 
-            <button
-              disabled={checkingIn}
-              onClick={() => handleGpsCheckIn("check_out")}
-              className="w-full h-13 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-2xl font-bold text-xs shadow-xs flex items-center justify-center gap-2 active:scale-95 transition"
-            >
-              <Clock className="w-4 h-4 text-slate-500" />
-              <span>CHECK-OUT TAN CA LÀM</span>
-            </button>
-          </div>
+                <div className="flex items-center justify-around py-3 border-y border-slate-800 text-center">
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold">Vị trí của bạn</p>
+                    <p className="font-mono text-xs font-bold text-emerald-400 mt-1">
+                      {userCoords ? `${userCoords.latitude.toFixed(4)}, ${userCoords.longitude.toFixed(4)}` : "Chưa có"}
+                    </p>
+                  </div>
+                  <div className="w-px h-10 bg-slate-800" />
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold">Công trình</p>
+                    <p className="font-mono text-xs font-bold text-blue-400 mt-1">
+                      {hasProjectGps ? `${Number(selectedTask.projectLat).toFixed(4)}, ${Number(selectedTask.projectLon).toFixed(4)}` : "Chưa lưu"}
+                    </p>
+                  </div>
+                </div>
 
-          {/* Thẻ Lịch sử Điểm danh gần nhất */}
-          {lastEvent && (
-            <div className="p-3.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs space-y-1 text-left">
-              <div className="flex items-center justify-between font-bold">
-                <span>Điểm danh gần nhất:</span>
-                <span className="text-emerald-700">✓ Đã xác thực vệ tinh</span>
+                {/* Trạng thái Khoảng cách thực tế */}
+                {distanceMeters !== null && (
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                      isWithinRadius
+                        ? "bg-emerald-950/60 text-emerald-300 border-emerald-700"
+                        : "bg-amber-950/60 text-amber-300 border-amber-700"
+                    }`}
+                  >
+                    <span>Khoảng cách:</span>
+                    <span>
+                      {formatDistance(distanceMeters)} {isWithinRadius ? "(Hợp lệ < 500m ✓)" : "(Vượt bán kính > 500m ⚠️)"}
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenNavigation(selectedTask)}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition"
+                >
+                  <Compass className="w-4 h-4" />
+                  <span>Mở Bản Đồ Dẫn Đường Google Maps</span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                </button>
               </div>
-              <p className="text-[11px] font-mono text-emerald-800">
-                Tọa độ: {Number(lastEvent.latitude).toFixed(6)}, {Number(lastEvent.longitude).toFixed(6)}
-              </p>
-              {lastEvent.distanceMeters !== undefined && (
-                <p className="font-extrabold text-xs text-emerald-950">
-                  Khoảng cách: {formatDistance(lastEvent.distanceMeters)}{" "}
-                  {lastEvent.isWithinRadius ? "(Chuẩn < 500m)" : "(Ngoài bán kính)"}
-                </p>
+
+              {/* Cảnh báo nếu ngoài bán kính */}
+              {distanceMeters !== null && distanceMeters > 500 && (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs space-y-1.5 text-amber-900 shadow-2xs">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Cảnh báo khoảng cách điểm danh</p>
+                      <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+                        Bạn đang cách công trình {formatDistance(distanceMeters)} (vượt quá bán kính 500m hợp lệ). Vui lòng di chuyển đến công trình để điểm danh hoặc liên hệ quản lý nếu tọa độ công trình cần hiệu chỉnh.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          )}
-        </div>
 
-        <button
-          onClick={() => setCurrentScreen("action_hub")}
-          className="w-full h-12 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm mt-auto"
-        >
-          [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
-        </button>
+            {/* Cột Phải: Bảng Tọa độ chi tiết & Nút Check-in / Check-out */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-base font-black text-slate-900">ĐIỂM DANH TỌA ĐỘ VỆ TINH</h2>
+                <p className="text-xs text-slate-500">
+                  Xác thực vị trí làm việc tại công trình: <strong className="text-slate-800">{selectedTask?.projectName || selectedTask?.title}</strong>
+                </p>
+              </div>
+
+              {/* Chi tiết Tọa độ Thợ & Công trình */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-slate-500 block font-medium">Vị trí của bạn:</span>
+                    {userCoords ? (
+                      <span className="font-mono font-bold text-slate-900 block">
+                        {userCoords.latitude.toFixed(6)}, {userCoords.longitude.toFixed(6)}
+                      </span>
+                    ) : locatingUser ? (
+                      <span className="text-slate-400 italic">Đang bắt tín hiệu vệ tinh...</span>
+                    ) : (
+                      <span className="text-rose-600 font-medium">Chưa có tín hiệu GPS</span>
+                    )}
+                    {userCoords && (
+                      <span className="text-[11px] text-slate-400 block">Độ chính xác: ±{userCoords.accuracy}m</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refreshUserLocation(false)}
+                    disabled={locatingUser}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold border border-slate-300 rounded-lg text-xs active:scale-95 transition shadow-2xs shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${locatingUser ? "animate-spin text-blue-600" : ""}`} />
+                    <span>Dò lại</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-200 pt-2.5 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-slate-500 block font-medium">Tọa độ công trình:</span>
+                    {hasProjectGps ? (
+                      <span className="font-mono font-bold text-blue-700 block">
+                        {Number(selectedTask.projectLat).toFixed(6)}, {Number(selectedTask.projectLon).toFixed(6)}
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 font-semibold block">Chưa ghim tọa độ dự án</span>
+                    )}
+                    <span className="text-[11px] text-slate-500 truncate block mt-0.5">
+                      {selectedTask?.projectAddress || selectedTask?.projectName}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditLocationModal(selectedTask)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold border border-slate-300 rounded-lg text-xs transition shadow-2xs shrink-0"
+                    title="Chỉnh sửa vị trí / tọa độ công trình"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Sửa tọa độ</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2 Nút Điểm danh Check-in & Check-out */}
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={checkingIn}
+                  onClick={() => handleGpsCheckIn("check_in")}
+                  className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
+                >
+                  <Navigation className="w-5 h-5" />
+                  <span>{checkingIn ? "Đang gửi tọa độ GPS..." : "BẤM CHECK-IN VÀO CA"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={checkingIn}
+                  onClick={() => handleGpsCheckIn("check_out")}
+                  className="w-full h-12 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-2xl font-bold text-xs shadow-xs flex items-center justify-center gap-2 active:scale-95 transition"
+                >
+                  <Clock className="w-4 h-4 text-slate-500" />
+                  <span>CHECK-OUT TAN CA LÀM</span>
+                </button>
+              </div>
+
+              {/* Thẻ Lịch sử Điểm danh gần nhất */}
+              {lastEvent && (
+                <div className="p-3.5 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-xl text-xs space-y-1 text-left">
+                  <div className="flex items-center justify-between font-bold">
+                    <span>Điểm danh gần nhất:</span>
+                    <span className="text-emerald-700">✓ Đã xác thực vệ tinh</span>
+                  </div>
+                  <p className="text-[11px] font-mono text-emerald-800">
+                    Tọa độ: {Number(lastEvent.latitude).toFixed(6)}, {Number(lastEvent.longitude).toFixed(6)}
+                  </p>
+                  {lastEvent.distanceMeters !== undefined && (
+                    <p className="font-extrabold text-xs text-emerald-950">
+                      Khoảng cách: {formatDistance(lastEvent.distanceMeters)}{" "}
+                      {lastEvent.isWithinRadius ? "(Chuẩn < 500m)" : "(Ngoài bán kính)"}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setCurrentScreen("action_hub")}
+                className="w-full h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm transition"
+              >
+                [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* Modal Chỉnh sửa Tọa độ Công trình */}
         <Modal
@@ -1785,7 +2132,7 @@ export default function FieldOpsMobilePage() {
                   setManualLon(String(userCoords.longitude));
                   toast.success("Đã điền tọa độ GPS thiết bị hiện tại của bạn!");
                 }}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold flex items-center justify-center gap-1.5 transition border border-slate-200"
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold flex items-center justify-center gap-1.5 transition border border-slate-200 text-xs"
               >
                 <Crosshair className="w-3.5 h-3.5 text-blue-600" />
                 <span>Điền tọa độ GPS thiết bị của tôi ({userCoords.latitude.toFixed(5)}, {userCoords.longitude.toFixed(5)})</span>
@@ -1818,603 +2165,685 @@ export default function FieldOpsMobilePage() {
   }
 
   // ==========================================
-  // VIEW 4: SINGLE-FOCUS CAMERA & WATERMARK (LIVE VIEWFINDER)
+  // VIEW 4: SINGLE-FOCUS CAMERA & WATERMARK (LIVE VIEWFINDER) - RESPONSIVE VIEW
   // ==========================================
   if (currentScreen === "camera_view") {
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-900 flex flex-col p-4 space-y-4 text-white">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              stopCamera();
-              setCurrentScreen("action_hub");
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-slate-800/90 border border-slate-700 px-3 py-2 rounded-xl active:scale-95 shadow-xs"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Về Bàn Điều Khiển
-          </button>
-          <Badge variant="warning">CAMERA WATERMARK 📷</Badge>
-        </div>
-
-        {/* Khung Chụp ảnh hoặc Xem lại ảnh */}
-        {!watermarkedImage ? (
-          <div className="space-y-4 flex-1 flex flex-col">
-            <div className="text-center space-y-0.5">
-              <h2 className="text-base font-black text-white">MÁY ẢNH TRỰC TIẾP HIỆN TRƯỜNG</h2>
-              <p className="text-xs text-slate-400">
-                In chìm tọa độ GPS thực tế, giờ phút giây và tên công trình
-              </p>
-            </div>
-
-            {/* Live Camera Video Viewfinder */}
-            <div className="relative flex-1 min-h-[360px] bg-black rounded-2xl overflow-hidden border border-slate-700 flex items-center justify-center">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-
-              {/* Lưới căn góc Viewfinder */}
-              <div className="pointer-events-none absolute inset-4 border border-white/20 rounded-xl flex flex-col justify-between p-2">
-                <div className="flex justify-between text-[10px] text-white/60 font-mono">
-                  <span>REC [●]</span>
-                  <span>
-                    {userCoords ? `GPS: ${userCoords.latitude.toFixed(4)}, ${userCoords.longitude.toFixed(4)}` : "Đang dò GPS"}
-                  </span>
-                </div>
-                <div className="text-center text-[11px] text-amber-300 font-bold bg-black/40 py-1 px-2 rounded-lg mx-auto backdrop-blur-xs">
-                  {selectedTask?.projectName || "Công trình thi công"}
-                </div>
-              </div>
-
-              {/* Thông báo lỗi nếu không mở được camera */}
-              {cameraError && (
-                <div className="absolute inset-0 bg-slate-900/90 p-6 flex flex-col items-center justify-center text-center space-y-3">
-                  <AlertCircle className="w-10 h-10 text-amber-400" />
-                  <p className="text-xs text-slate-300 font-medium">{cameraError}</p>
-                  <button
-                    onClick={() => startCamera(facingMode)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold"
-                  >
-                    Thử lại camera
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Bảng điều khiển Chụp ảnh */}
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-around">
-                {/* Nút đổi camera trước / sau */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMode = facingMode === "environment" ? "user" : "environment";
-                    setFacingMode(nextMode);
-                    startCamera(nextMode);
-                  }}
-                  className="p-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full border border-slate-700 transition"
-                  title="Đổi camera trước/sau"
-                >
-                  <SwitchCamera className="w-5 h-5" />
-                </button>
-
-                {/* Nút Chụp ảnh Shutter to rõ */}
-                <button
-                  type="button"
-                  onClick={handleSnapLiveCamera}
-                  className="w-20 h-20 rounded-full bg-white text-slate-900 border-4 border-slate-400 flex items-center justify-center shadow-lg active:scale-90 transition hover:bg-slate-100"
-                  title="Bấm để chụp ảnh"
-                >
-                  <div className="w-14 h-14 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center">
-                    <Camera className="w-6 h-6 text-white" />
-                  </div>
-                </button>
-
-                {/* Nút Chọn file từ bộ nhớ (Fallback) */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full border border-slate-700 transition"
-                  title="Chọn ảnh từ tệp tin"
-                >
-                  <FolderOpen className="w-5 h-5" />
-                </button>
-              </div>
-
-              <input
-                type="file"
-                accept="image/*"
-                ref={fileInputRef}
-                onChange={handleFileCaptureFallback}
-                className="hidden"
-              />
-
-              <p className="text-[11px] text-center text-slate-400">
-                Chạm nút tròn đỏ để chụp hoặc chạm biểu tượng thư mục để tải ảnh từ bộ nhớ
-              </p>
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-950 py-4 sm:py-6 px-3 sm:px-6 lg:px-8 text-white">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {/* Header Navigation */}
+          <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 shadow-xs flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                stopCamera();
+                setCurrentScreen("action_hub");
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3.5 py-2 rounded-xl active:scale-95 shadow-xs transition"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Về Bàn Điều Khiển</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-extrabold text-blue-400 bg-blue-950/60 px-2.5 py-1 rounded-md border border-blue-800">
+                {selectedTask?.code}
+              </span>
+              <Badge variant="warning">CAMERA WATERMARK 📷</Badge>
             </div>
           </div>
-        ) : (
-          /* Màn hình Xem lại ảnh đã đóng dấu Watermark */
-          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-4 flex-1 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="text-center">
-                <h3 className="text-sm font-bold text-emerald-400 flex items-center justify-center gap-1.5">
-                  <CheckCheck className="w-4 h-4" />
-                  ĐÃ ĐÓNG DẤU WATERMARK THÀNH CÔNG
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Ảnh đã được in chìm GPS vệ tinh và thời gian thực tế
+
+          {/* Khung Chụp ảnh hoặc Xem lại ảnh */}
+          {!watermarkedImage ? (
+            <div className="space-y-4 flex flex-col">
+              <div className="text-center space-y-1">
+                <h2 className="text-base sm:text-lg font-black text-white">
+                  MÁY ẢNH TRỰC TIẾP HIỆN TRƯỜNG
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Tự động in chìm tọa độ GPS vệ tinh, ngày giờ thực tế và tên công trình vào ảnh chụp
                 </p>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-slate-700 shadow-md max-h-[420px] flex items-center justify-center bg-black">
+              {/* Live Camera Video Viewfinder */}
+              <div className="relative w-full aspect-4/3 sm:aspect-16/9 max-h-[540px] min-h-[360px] bg-black rounded-3xl overflow-hidden border-2 border-slate-800 flex items-center justify-center shadow-2xl">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+
+                {/* Lưới căn góc & HUD Overlay */}
+                <div className="pointer-events-none absolute inset-3 sm:inset-5 border border-white/25 rounded-2xl flex flex-col justify-between p-3">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-white/80">
+                    <span className="bg-rose-600/90 text-white font-bold px-2 py-0.5 rounded flex items-center gap-1.5 backdrop-blur-xs">
+                      <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                      LIVE REC [●]
+                    </span>
+                    <span className="bg-black/50 text-emerald-300 font-bold px-2.5 py-1 rounded-lg backdrop-blur-xs">
+                      {userCoords ? `📍 GPS: ${userCoords.latitude.toFixed(5)}, ${userCoords.longitude.toFixed(5)}` : "Đang dò GPS"}
+                    </span>
+                  </div>
+
+                  <div className="text-center text-xs text-amber-300 font-bold bg-black/60 py-1.5 px-4 rounded-xl mx-auto backdrop-blur-md border border-white/10 max-w-[90%] truncate">
+                    {selectedTask?.projectName || selectedTask?.title || "Công trình thi công"}
+                  </div>
+                </div>
+
+                {/* Thông báo lỗi nếu không mở được camera */}
+                {cameraError && (
+                  <div className="absolute inset-0 bg-slate-950/95 p-6 flex flex-col items-center justify-center text-center space-y-3 z-10">
+                    <AlertCircle className="w-12 h-12 text-amber-400" />
+                    <p className="text-xs text-slate-300 font-medium max-w-sm leading-relaxed">{cameraError}</p>
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => startCamera(facingMode)}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm"
+                      >
+                        Thử lại camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold border border-slate-700"
+                      >
+                        Chọn ảnh từ thư viện
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Bảng điều khiển Chụp ảnh Dock */}
+              <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-center justify-around max-w-md mx-auto">
+                  {/* Nút đổi camera trước / sau */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMode = facingMode === "environment" ? "user" : "environment";
+                      setFacingMode(nextMode);
+                      startCamera(nextMode);
+                    }}
+                    className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full border border-slate-700 active:scale-95 transition shadow-sm"
+                    title="Đổi camera trước/sau"
+                  >
+                    <SwitchCamera className="w-5 h-5" />
+                  </button>
+
+                  {/* Nút Chụp ảnh Shutter to rõ */}
+                  <button
+                    type="button"
+                    onClick={handleSnapLiveCamera}
+                    className="w-20 h-20 rounded-full bg-white text-slate-900 border-4 border-slate-400 flex items-center justify-center shadow-xl active:scale-90 transition hover:bg-slate-100"
+                    title="Bấm để chụp ảnh"
+                  >
+                    <div className="w-14 h-14 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center shadow-inner">
+                      <Camera className="w-6 h-6 text-white" />
+                    </div>
+                  </button>
+
+                  {/* Nút Chọn file từ bộ nhớ (Fallback) */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-4 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-full border border-slate-700 active:scale-95 transition shadow-sm"
+                    title="Chọn ảnh từ tệp tin"
+                  >
+                    <FolderOpen className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleFileCaptureFallback}
+                  className="hidden"
+                />
+
+                <p className="text-[11px] text-center text-slate-400">
+                  Chạm nút tròn đỏ để chụp hoặc chạm biểu tượng thư mục để tải ảnh từ máy
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Màn hình Xem lại ảnh đã đóng dấu Watermark */
+            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4 shadow-2xl">
+              <div className="text-center space-y-1">
+                <h3 className="text-base font-black text-emerald-400 flex items-center justify-center gap-1.5">
+                  <CheckCheck className="w-5 h-5" />
+                  ĐÃ ĐÓNG DẤU WATERMARK THÀNH CÔNG
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Ảnh đã được in chìm GPS vệ tinh và thời gian thực tế ở chân ảnh
+                </p>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-800 shadow-inner max-h-[500px] flex items-center justify-center bg-black/90 p-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={watermarkedImage}
                   alt="Ảnh đóng dấu Watermark"
-                  className="w-full h-auto object-contain"
+                  className="w-full h-auto max-h-[480px] object-contain rounded-xl"
                 />
               </div>
-            </div>
 
-            <div className="space-y-2.5 pt-2">
-              <div className="flex items-center gap-2">
-                <a
-                  href={watermarkedImage}
-                  download={`watermark_${selectedTask?.code || "hien_truong"}_${Date.now()}.jpg`}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-3 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Tải ảnh về máy</span>
-                </a>
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <a
+                    href={watermarkedImage}
+                    download={`watermark_${selectedTask?.code || "hien_truong"}_${Date.now()}.jpg`}
+                    className="inline-flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Tải ảnh về máy</span>
+                  </a>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWatermarkedImage(null);
+                      startCamera(facingMode);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Chụp lại ảnh khác</span>
+                  </button>
+                </div>
 
                 <button
+                  type="button"
                   onClick={() => {
-                    setWatermarkedImage(null);
-                    startCamera(facingMode);
+                    stopCamera();
+                    setCurrentScreen("action_hub");
                   }}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-3 px-3 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-xl transition"
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-xs transition"
                 >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Chụp lại ảnh khác</span>
+                  [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
                 </button>
               </div>
-
-              <button
-                onClick={() => {
-                  stopCamera();
-                  setCurrentScreen("action_hub");
-                }}
-                className="w-full py-3 bg-slate-900 hover:bg-black text-slate-200 border border-slate-700 rounded-xl font-bold text-xs shadow-xs"
-              >
-                [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
-              </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   }
 
   // ==========================================
-  // VIEW 5: SINGLE-FOCUS BÁO CÁO GIỌNG NÓI AI
+  // VIEW 5: SINGLE-FOCUS BÁO CÁO GIỌNG NÓI AI - RESPONSIVE VIEW
   // ==========================================
   if (currentScreen === "voice_view") {
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-50 flex flex-col p-4 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              stopListening();
-              setCurrentScreen("action_hub");
-            }}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 px-3 py-2 rounded-xl active:scale-95 shadow-xs"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Về Bàn Điều Khiển
-          </button>
-          <Badge variant="warning">AI VOICE 🎙️</Badge>
-        </div>
-
-        {/* Card chính Báo cáo giọng nói */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="text-center space-y-1">
-            <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">
-              Báo Cáo Nhanh Bằng Giọng Nói
-            </h2>
-            <p className="text-xs text-slate-500">
-              Dành cho thợ tay dính sơn dầu, không cần gõ phím. <br />
-              <strong className="text-slate-800">{selectedTask?.projectName || "Công trình thi công"}</strong>
-            </p>
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto space-y-5">
+          {/* Header Navigation */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                stopListening();
+                setCurrentScreen("action_hub");
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl active:scale-95 transition"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Về Bàn Điều Khiển</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-extrabold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+                {selectedTask?.code}
+              </span>
+              <Badge variant="warning">AI VOICE 🎙️</Badge>
+            </div>
           </div>
 
-          {/* Nút Micro Thu Âm Siêu To với Hiệu Ứng Sóng Âm Live */}
-          <div className="py-2 flex flex-col items-center justify-center space-y-3">
-            <div className="relative">
-              {isListening && (
-                <>
-                  <div className="absolute -inset-3 rounded-full bg-rose-400/30 animate-ping" />
-                  <div className="absolute -inset-1.5 rounded-full bg-rose-500/20 animate-pulse" />
-                </>
-              )}
-              <button
-                type="button"
-                onClick={toggleListening}
-                className={`relative w-28 h-28 rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all duration-300 ${
-                  isListening
-                    ? "bg-rose-600 hover:bg-rose-700 text-white ring-8 ring-rose-100 shadow-rose-200"
-                    : "bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-amber-200"
-                }`}
-              >
-                {isListening ? (
-                  <>
-                    <MicOff className="w-9 h-9 mb-1 animate-bounce" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">
-                      DỪNG LẠI
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-9 h-9 mb-1" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">
-                      BẤM ĐỂ NÓI
-                    </span>
-                  </>
-                )}
-              </button>
-            </div>
+          {/* 2-Column Responsive Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Cột Trái: Microphone Recording Studio */}
+            <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4 text-center">
+              <div className="space-y-1">
+                <span className="text-[11px] font-extrabold text-amber-600 uppercase tracking-wider bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+                  Thu Âm Tiếng Việt (vi-VN)
+                </span>
+                <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                  Báo Cáo Bằng Giọng Nói
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Dành cho thợ tay dính sơn dầu, không cần gõ phím.
+                </p>
+              </div>
 
-            {/* Trạng thái sóng âm khi đang thu */}
-            {isListening ? (
-              <div className="flex flex-col items-center gap-1.5 pt-1">
-                <div className="flex items-center gap-1">
-                  <span className="w-1.5 h-4 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "0ms" }} />
-                  <span className="w-1.5 h-6 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
-                  <span className="w-1.5 h-8 bg-rose-600 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
-                  <span className="w-1.5 h-5 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "450ms" }} />
-                  <span className="w-1.5 h-3 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "200ms" }} />
+              {/* Nút Micro Thu Âm Siêu To */}
+              <div className="py-4 flex flex-col items-center justify-center space-y-3">
+                <div className="relative">
+                  {isListening && (
+                    <>
+                      <div className="absolute -inset-4 rounded-full bg-rose-400/30 animate-ping" />
+                      <div className="absolute -inset-2 rounded-full bg-rose-500/20 animate-pulse" />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all duration-300 ${
+                      isListening
+                        ? "bg-rose-600 hover:bg-rose-700 text-white ring-8 ring-rose-100 shadow-rose-200"
+                        : "bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-amber-200"
+                    }`}
+                  >
+                    {isListening ? (
+                      <>
+                        <MicOff className="w-10 h-10 mb-1 animate-bounce" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">
+                          DỪNG LẠI
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="w-10 h-10 mb-1" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">
+                          BẤM ĐỂ NÓI
+                        </span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <span className="text-xs font-bold text-rose-600 animate-pulse">
-                  Đang lắng nghe tiếng Việt (vi-VN)... Hãy nói tự nhiên!
+
+                {/* Trạng thái sóng âm */}
+                {isListening ? (
+                  <div className="flex flex-col items-center gap-1.5 pt-1">
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-4 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "0ms" }} />
+                      <span className="w-1.5 h-6 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                      <span className="w-1.5 h-8 bg-rose-600 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
+                      <span className="w-1.5 h-5 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "450ms" }} />
+                      <span className="w-1.5 h-3 bg-rose-500 rounded-full animate-pulse" style={{ animationDelay: "200ms" }} />
+                    </div>
+                    <span className="text-xs font-bold text-rose-600 animate-pulse">
+                      Đang lắng nghe tiếng Việt... Hãy nói tự nhiên!
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 font-medium">
+                    Chạm vào nút Micro tròn để bắt đầu thu âm
+                  </p>
+                )}
+              </div>
+
+              {/* Thông tin dự án */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-left text-xs">
+                <span className="text-slate-400 block text-[11px] font-medium">Công trình thi công:</span>
+                <span className="font-bold text-slate-800 line-clamp-1">
+                  {selectedTask?.projectName || selectedTask?.title}
                 </span>
               </div>
-            ) : (
-              <p className="text-[11px] text-slate-400 font-medium">
-                Chạm vào nút Micro để bật thu âm trực tiếp
-              </p>
-            )}
-          </div>
-
-          {/* Dòng chữ nhận diện trực tiếp trong lúc nói (Interim live text) */}
-          {interimVoiceText && (
-            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 animate-pulse flex items-start gap-2">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold block text-[11px] text-amber-700">Đang nhận diện giọng nói:</span>
-                <span className="italic font-medium">&quot;{interimVoiceText}&quot;</span>
-              </div>
             </div>
-          )}
 
-          {/* Khung nội dung văn bản báo cáo */}
-          <div className="space-y-1.5 text-left">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Volume2 className="w-3.5 h-3.5 text-amber-600" />
-                Văn bản báo cáo tổng hợp:
-              </label>
-              {voiceText && (
+            {/* Cột Phải: Live Transcript, Text Editor & Template Chips */}
+            <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+              {/* Dòng chữ nhận diện trực tiếp trong lúc nói */}
+              {interimVoiceText && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 animate-pulse flex items-start gap-2.5">
+                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-[11px] text-amber-700">Đang nhận diện giọng nói:</span>
+                    <span className="italic font-medium">&quot;{interimVoiceText}&quot;</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Khung nội dung văn bản báo cáo */}
+              <div className="space-y-1.5 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-amber-600" />
+                    Văn bản báo cáo tổng hợp:
+                  </label>
+                  {voiceText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVoiceText("");
+                        setInterimVoiceText("");
+                        toast.success("Đã xóa trắng nội dung");
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Xóa làm lại
+                    </button>
+                  )}
+                </div>
+
+                <textarea
+                  rows={5}
+                  value={voiceText}
+                  onChange={(e) => setVoiceText(e.target.value)}
+                  placeholder="Nội dung nói sẽ tự động chuyển thành văn bản tại đây (bạn cũng có thể gõ hoặc chỉnh sửa thủ công)..."
+                  className="w-full p-3.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed bg-slate-50 text-slate-900"
+                />
+              </div>
+
+              {/* Gợi ý mẫu câu nhanh (Quick Voice Chips) */}
+              <div className="space-y-1.5 text-left">
+                <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  Chạm để chèn nhanh câu mẫu ca làm việc:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {quickVoiceTemplates.map((template, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleAppendVoiceTemplate(template)}
+                      className="text-[11px] bg-slate-100 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-200 transition text-left active:scale-95"
+                    >
+                      + {template}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cảnh báo hỗ trợ trình duyệt */}
+              {!isSpeechSupported && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2 text-left">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Khuyến nghị trình duyệt</span>
+                    <span>Vui lòng mở trên Google Chrome, Microsoft Edge hoặc Safari để tính năng nhận diện giọng nói hoạt động tốt nhất.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Nút nộp báo cáo ca làm việc */}
+              <div className="space-y-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={submittingVoiceReport || (!voiceText.trim() && !interimVoiceText.trim())}
+                  onClick={async () => {
+                    const textToSubmit = (voiceText || interimVoiceText).trim();
+                    if (!textToSubmit) {
+                      toast.error("Vui lòng bấm vào nút Micro để nói hoặc nhập nội dung báo cáo");
+                      return;
+                    }
+                    try {
+                      setSubmittingVoiceReport(true);
+                      stopListening();
+
+                      const res = await fetch("/api/field/work-reports", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          taskId: selectedTask?.id,
+                          projectId: selectedTask?.projectId,
+                          speechText: textToSubmit,
+                          notes: textToSubmit,
+                          completionPercentage: 85,
+                        }),
+                      });
+
+                      const data = await res.json();
+                      if (!res.ok) {
+                        throw new Error(data.error || "Lỗi gửi báo cáo");
+                      }
+
+                      toast.success("Đã nộp nhật ký ca làm việc thành công lên hệ thống!");
+                      if (selectedTask) {
+                        setSelectedTask((prev: any) => ({
+                          ...prev,
+                          status: "awaiting_acceptance",
+                          progressPercent: 85,
+                        }));
+                        setTasks((prev) =>
+                          prev.map((t) =>
+                            t.id === selectedTask.id
+                              ? { ...t, status: "awaiting_acceptance", progressPercent: 85 }
+                              : t
+                          )
+                        );
+                      }
+
+                      setVoiceText("");
+                      setInterimVoiceText("");
+                      setCurrentScreen("action_hub");
+                      fetchMyTasks();
+                    } catch (e: any) {
+                      toast.error(e.message || "Không thể gửi báo cáo");
+                    } finally {
+                      setSubmittingVoiceReport(false);
+                    }
+                  }}
+                  className="w-full h-14 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
+                >
+                  <Send className={`w-4 h-4 ${submittingVoiceReport ? "animate-spin" : ""}`} />
+                  <span>{submittingVoiceReport ? "ĐANG NỘP BÁO CÁO..." : "NỘP BÁO CÁO LÊN HỆ THỐNG"}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
-                    setVoiceText("");
-                    setInterimVoiceText("");
-                    toast.success("Đã xóa trắng nội dung");
+                    stopListening();
+                    setCurrentScreen("action_hub");
                   }}
-                  className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-700 font-bold hover:underline"
+                  className="w-full h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm transition"
                 >
-                  <Trash2 className="w-3 h-3" />
-                  Xóa làm lại
+                  [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
                 </button>
-              )}
-            </div>
-
-            <textarea
-              rows={4}
-              value={voiceText}
-              onChange={(e) => setVoiceText(e.target.value)}
-              placeholder="Nội dung nói sẽ tự động chuyển thành văn bản tại đây (bạn cũng có thể gõ hoặc sửa thủ công)..."
-              className="w-full p-3 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed bg-slate-50 text-slate-900"
-            />
-          </div>
-
-          {/* Gợi ý mẫu câu nhanh (Quick Voice Chips) */}
-          <div className="space-y-1.5 text-left">
-            <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-500" />
-              Chạm để chèn nhanh câu mẫu ca làm việc:
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {quickVoiceTemplates.map((template, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleAppendVoiceTemplate(template)}
-                  className="text-[11px] bg-slate-100 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-200 transition text-left active:scale-95"
-                >
-                  + {template}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cảnh báo hỗ trợ trình duyệt nếu có */}
-          {!isSpeechSupported && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2 text-left">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold block">Khuyến nghị trình duyệt</span>
-                <span>Vui lòng mở trên Google Chrome, Microsoft Edge hoặc Safari để tính năng nhận diện giọng nói hoạt động tốt nhất.</span>
               </div>
             </div>
-          )}
-
-          {/* Nút nộp báo cáo ca làm việc */}
-          <button
-            type="button"
-            disabled={submittingVoiceReport || (!voiceText.trim() && !interimVoiceText.trim())}
-            onClick={async () => {
-              const textToSubmit = (voiceText || interimVoiceText).trim();
-              if (!textToSubmit) {
-                toast.error("Vui lòng bấm vào nút Micro để nói hoặc nhập nội dung báo cáo");
-                return;
-              }
-              try {
-                setSubmittingVoiceReport(true);
-                stopListening();
-
-                const res = await fetch("/api/field/work-reports", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    taskId: selectedTask?.id,
-                    projectId: selectedTask?.projectId,
-                    speechText: textToSubmit,
-                    notes: textToSubmit,
-                    completionPercentage: 85,
-                  }),
-                });
-
-                const data = await res.json();
-                if (!res.ok) {
-                  throw new Error(data.error || "Lỗi gửi báo cáo");
-                }
-
-                toast.success("Đã nộp nhật ký ca làm việc thành công lên hệ thống!");
-                if (selectedTask) {
-                  setSelectedTask((prev: any) => ({
-                    ...prev,
-                    status: "awaiting_acceptance",
-                    progressPercent: 85,
-                  }));
-                  setTasks((prev) =>
-                    prev.map((t) =>
-                      t.id === selectedTask.id
-                        ? { ...t, status: "awaiting_acceptance", progressPercent: 85 }
-                        : t
-                    )
-                  );
-                }
-
-                setVoiceText("");
-                setInterimVoiceText("");
-                setCurrentScreen("action_hub");
-                fetchMyTasks();
-              } catch (e: any) {
-                toast.error(e.message || "Không thể gửi báo cáo");
-              } finally {
-                setSubmittingVoiceReport(false);
-              }
-            }}
-            className="w-full h-14 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition disabled:opacity-50"
-          >
-            <Send className={`w-4 h-4 ${submittingVoiceReport ? "animate-spin" : ""}`} />
-            <span>{submittingVoiceReport ? "ĐANG NỘP BÁO CÁO..." : "NỘP BÁO CÁO LÊN HỆ THỐNG"}</span>
-          </button>
+          </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            stopListening();
-            setCurrentScreen("action_hub");
-          }}
-          className="w-full h-12 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm mt-auto transition"
-        >
-          [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
-        </button>
       </div>
     );
   }
 
   // ==========================================
-  // VIEW 6: SINGLE-FOCUS KÝ SỐ NGHIỆM THU
+  // VIEW 6: SINGLE-FOCUS KÝ SỐ NGHIỆM THU - RESPONSIVE VIEW
   // ==========================================
   if (currentScreen === "signature_view") {
     return (
-      <div className="mx-auto max-w-md min-h-screen bg-slate-50 flex flex-col p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setCurrentScreen("action_hub")}
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 px-3 py-2 rounded-xl active:scale-95 shadow-xs"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Về Bàn Điều Khiển
-          </button>
-          <Badge variant="success">KÝ SỐ ✍️</Badge>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-          <div className="text-center">
-            <h2 className="text-base font-black text-slate-900">KÝ SỐ NGHIỆM THU MÀN HÌNH</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Đưa máy cho đại diện khách hàng ký xác nhận hoàn thành công trình
-            </p>
-          </div>
-
-          <div className="relative rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 overflow-hidden">
-            <canvas
-              ref={canvasRef}
-              width={340}
-              height={180}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-              className="w-full touch-none cursor-crosshair"
-            />
-            {!hasSignature && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-blue-400 font-bold">
-                Khách hàng ký tên tại đây bằng ngón tay
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Nhập họ tên người ký (VD: Nguyễn Minh Quân)..."
-              value={signerName}
-              onChange={(e) => setSignerName(e.target.value)}
-              className="text-xs h-11"
-            />
+      <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-3xl mx-auto space-y-5">
+          {/* Header Navigation */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between">
             <button
-              onClick={clearSignature}
-              className="p-3 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 flex-shrink-0"
-              title="Xóa ký lại"
+              type="button"
+              onClick={() => setCurrentScreen("action_hub")}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl active:scale-95 transition"
             >
-              <RotateCcw className="w-4 h-4" />
+              <ArrowLeft className="w-4 h-4" />
+              <span>Về Bàn Điều Khiển</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                {selectedTask?.code}
+              </span>
+              <Badge variant="success">KÝ SỐ ✍️</Badge>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
+            <div className="text-center space-y-1">
+              <h2 className="text-base sm:text-lg font-black text-slate-900">
+                KÝ SỐ NGHIỆM THU TRỰC TIẾP TRÊN MÀN HÌNH
+              </h2>
+              <p className="text-xs text-slate-500">
+                Đưa thiết bị cho đại diện khách hàng hoặc quản lý ký xác nhận hoàn thành công trình
+              </p>
+            </div>
+
+            {/* Khung Canvas Chữ ký số */}
+            <div className="relative rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 overflow-hidden w-full h-[220px] sm:h-[260px] flex items-center justify-center">
+              <canvas
+                ref={canvasRef}
+                width={700}
+                height={260}
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onTouchStart={startDrawing}
+                onTouchMove={draw}
+                onTouchEnd={stopDrawing}
+                className="w-full h-full touch-none cursor-crosshair"
+              />
+              {!hasSignature && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-blue-400 font-bold">
+                  ✍️ Khách hàng ký tên tại đây (bằng ngón tay, bút cảm ứng hoặc chuột)
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <Input
+                placeholder="Nhập họ và tên người ký nghiệm thu (VD: Nguyễn Minh Quân)..."
+                value={signerName}
+                onChange={(e) => setSignerName(e.target.value)}
+                className="text-xs h-11 flex-1 bg-slate-50 border-slate-200 focus:bg-white rounded-xl"
+              />
+              <button
+                type="button"
+                onClick={clearSignature}
+                className="p-3 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-xl flex-shrink-0 transition active:scale-95 shadow-2xs"
+                title="Xóa ký lại"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveSignature}
+              className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              <span>XÁC NHẬN & LƯU BIÊN BẢN NGHIỆM THU</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentScreen("action_hub")}
+              className="w-full h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm transition"
+            >
+              [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
             </button>
           </div>
-
-          <button
-            onClick={handleSaveSignature}
-            className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>XÁC NHẬN & LƯU BIÊN BẢN NGHIỆM THU</span>
-          </button>
         </div>
-
-        <button
-          onClick={() => setCurrentScreen("action_hub")}
-          className="w-full h-12 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm mt-auto"
-        >
-          [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
-        </button>
       </div>
     );
   }
 
   // ==========================================
-  // VIEW 7: SINGLE-FOCUS VẬT TƯ XE (MATERIALS)
+  // VIEW 7: SINGLE-FOCUS VẬT TƯ XE (MATERIALS) - RESPONSIVE VIEW
   // ==========================================
   return (
-    <div className="mx-auto max-w-md min-h-screen bg-slate-50 flex flex-col p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setCurrentScreen("action_hub")}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 px-3 py-2 rounded-xl active:scale-95 shadow-xs"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Về Bàn Điều Khiển
-        </button>
-        <Badge variant="info">XE TẢI 🚚</Badge>
-      </div>
-
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div>
-          <h2 className="text-base font-black text-slate-900">VẬT TƯ CẤP THEO XE TẢI</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Danh sách vật tư đã xuất kho M09 mang đến công trình. Hãy tích kiểm tra đủ hàng!
-          </p>
+    <div className="min-h-[calc(100vh-4rem)] bg-slate-50/60 py-4 sm:py-6 px-3 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto space-y-5">
+        {/* Header Navigation */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setCurrentScreen("action_hub")}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl active:scale-95 transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Về Bàn Điều Khiển</span>
+          </button>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+              {selectedTask?.code}
+            </span>
+            <Badge variant="info">XE TẢI 🚚</Badge>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          {materials.map((m) => (
-            <div
-              key={m.id}
-              onClick={() => handleToggleMaterial(m.id)}
-              className={`p-3.5 rounded-xl border-2 cursor-pointer flex items-center justify-between transition ${
-                m.checked
-                  ? "bg-emerald-50/70 border-emerald-400 text-emerald-950"
-                  : "bg-slate-50 border-slate-200 text-slate-700"
-              }`}
-            >
-              <div className="space-y-0.5">
-                <p className="text-xs font-bold">{m.name}</p>
-                <p className="text-[11px] text-slate-500 font-semibold">Số lượng: {m.qty}</p>
-              </div>
+        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-base sm:text-lg font-black text-slate-900">
+              VẬT TƯ CẤP THEO XE VẬN CHUYỂN
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Danh sách vật tư đã xuất kho M09 mang đến công trình. Hãy chạm vào từng mục để kiểm kê đủ hàng!
+            </p>
+          </div>
 
+          {/* Grid Danh mục vật tư */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {materials.map((m) => (
               <div
-                className={`w-6 h-6 rounded-md flex items-center justify-center border ${
+                key={m.id}
+                onClick={() => handleToggleMaterial(m.id)}
+                className={`p-3.5 sm:p-4 rounded-2xl border-2 cursor-pointer flex items-center justify-between transition active:scale-[0.99] ${
                   m.checked
-                    ? "bg-emerald-600 border-emerald-600 text-white"
-                    : "border-slate-300 bg-white"
+                    ? "bg-emerald-50/70 border-emerald-400 text-emerald-950"
+                    : "bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300"
                 }`}
               >
-                {m.checked && <Check className="w-4 h-4" />}
+                <div className="space-y-0.5 min-w-0 pr-2">
+                  <p className="text-xs font-bold truncate">{m.name}</p>
+                  <p className="text-[11px] text-slate-500 font-semibold">Số lượng: {m.qty}</p>
+                </div>
+
+                <div
+                  className={`w-6 h-6 rounded-lg flex items-center justify-center border shrink-0 transition ${
+                    m.checked
+                      ? "bg-emerald-600 border-emerald-600 text-white shadow-2xs"
+                      : "border-slate-300 bg-white"
+                  }`}
+                >
+                  {m.checked && <Check className="w-4 h-4" />}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        <button
-          onClick={async () => {
-            try {
-              if (!selectedTask?.id) throw new Error("Chọn công việc trước khi xác nhận kiểm tra vật tư");
-              if (selectedTask?.id) {
-                const res = await fetch("/api/field/work-reports", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    taskId: selectedTask.id,
-                    projectId: selectedTask.projectId,
-                    notes: "Xác nhận kiểm kê vật tư cấp theo xe vận chuyển",
-                    materials,
-                  }),
-                });
-                if (!res.ok) {
-                  const data = await res.json().catch(() => ({}));
-                  throw new Error(data.error || "Lỗi ghi nhận kiểm tra vật tư");
+          <div className="space-y-2.5 pt-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (!selectedTask?.id) throw new Error("Chọn công việc trước khi xác nhận kiểm tra vật tư");
+                  if (selectedTask?.id) {
+                    const res = await fetch("/api/field/work-reports", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        taskId: selectedTask.id,
+                        projectId: selectedTask.projectId,
+                        notes: "Xác nhận kiểm kê vật tư cấp theo xe vận chuyển",
+                        materials,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.error || "Lỗi ghi nhận kiểm tra vật tư");
+                    }
+                  }
+                  toast.success("Đã ghi nhận kiểm tra đủ vật tư trên xe vào hệ thống!");
+                  setCurrentScreen("action_hub");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Lỗi xác nhận kiểm tra vật tư");
                 }
-              }
-              toast.success("Đã ghi nhận kiểm tra đủ vật tư trên xe vào hệ thống!");
-              setCurrentScreen("action_hub");
-            } catch (error) {
-              toast.error(error instanceof Error ? error.message : "Lỗi xác nhận kiểm tra vật tư");
-            }
-          }}
-          className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2"
-        >
-          <CheckCircle2 className="w-5 h-5" />
-          <span>XÁC NHẬN ĐÃ NHẬN ĐỦ VẬT TƯ</span>
-        </button>
-      </div>
+              }}
+              className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-95 transition"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              <span>XÁC NHẬN ĐÃ NHẬN ĐỦ VẬT TƯ</span>
+            </button>
 
-      <button
-        onClick={() => setCurrentScreen("action_hub")}
-        className="w-full h-12 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm mt-auto"
-      >
-        [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
-      </button>
+            <button
+              type="button"
+              onClick={() => setCurrentScreen("action_hub")}
+              className="w-full h-11 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm transition"
+            >
+              [XONG] QUAY LẠI BÀN ĐIỀU KHIỂN
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
