@@ -71,8 +71,8 @@ function resolveDefaultRoute(pathname: string): RouteFallback {
     return { title: "Dự án", subtitle: "Công trình thi công" };
   }
 
-  if (pathname.startsWith("/hien-truong")) {
-    return { title: "Hiện trường", subtitle: "Tác nghiệp GPS" };
+  if (pathname.startsWith("/apps/hien-truong") || pathname.startsWith("/hien-truong")) {
+    return { title: "Hiện trường 1 chạm", subtitle: "Field Ops Pro" };
   }
 
   if (pathname.startsWith("/apps/doi-xe") || pathname.startsWith("/doi-xe") || pathname.startsWith("/van-chuyen")) {

@@ -353,4 +353,5 @@ export const SCREEN_REQUIREMENTS: Record<string, { permissions: PermissionKey[];
   APP_HRM: { permissions: ["employee.read", "attendance.read", "payroll.read", "salary.read"], anyOf: true, description: "App HRM - Quản trị Nhân sự & Lương" },
   APP_DOCS: { permissions: ["document.read", "document.manage", "project.read", "work_report.read"], anyOf: true, description: "Tài liệu nội bộ & Drive" },
   APP_FLEET: { permissions: ["fleet.read", "trip.read", "fleet_report.read"], anyOf: true, description: "App Đội Xe & Vận Chuyển (Fleet Pro)" },
+  APP_FIELD: { permissions: ["task.read", "field_event.create", "work_report.create"], anyOf: true, description: "App Hiện Trường 1 Chạm (Field Ops Pro)" },
 };

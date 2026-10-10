@@ -40,8 +40,7 @@ function getScreenCodeForPath(pathname: string): { code: string; name: string } 
   if (pathname.startsWith("/san-xuat")) return { code: "M13.1", name: "Sản xuất tại xưởng" };
   if (pathname.startsWith("/du-an/")) return { code: "M12", name: "Chi tiết dự án 360°" };
   if (pathname.startsWith("/du-an")) return { code: "M11", name: "Danh sách & Tiến độ dự án thi công" };
-  if (pathname.startsWith("/bao-hanh")) return { code: "M11", name: "Bảo hành & Dịch vụ hậu mãi" };
-  if (pathname.startsWith("/hien-truong")) return { code: "M14", name: "Không gian tác nghiệp di động của thợ & Lái xe" };
+  if (pathname.startsWith("/apps/hien-truong") || pathname.startsWith("/hien-truong")) return { code: "APP_FIELD", name: "Hiện trường 1 chạm (Field Ops Pro)" };
   if (pathname.startsWith("/van-chuyen") || pathname.startsWith("/doi-xe")) return { code: "M15", name: "Vận chuyển & Đội xe" };
   if (pathname.startsWith("/phan-tich")) return { code: "M16.1", name: "Phân tích Điều hành Signage" };
   if (pathname.startsWith("/tai-chinh")) return { code: "M16", name: "Quản lý thu chi & Sổ quỹ" };

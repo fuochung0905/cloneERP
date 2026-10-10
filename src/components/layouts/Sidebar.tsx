@@ -198,11 +198,11 @@ export const NAVIGATION_GROUPS: NavGroup[] = [
     icon: LayoutGrid,
     items: [
       {
-        title: "Hiện trường 1 chạm (GPS)",
-        href: "/hien-truong",
-        screenCode: "M14",
-        icon: MapPin,
-        badge: "GPS",
+        title: "Hiện trường 1 chạm (Field Ops)",
+        href: "/apps/hien-truong",
+        screenCode: "APP_FIELD",
+        icon: HardHat,
+        badge: "Field Pro",
       },
       {
         title: "HRM - Quản trị Nhân sự & Lương",
