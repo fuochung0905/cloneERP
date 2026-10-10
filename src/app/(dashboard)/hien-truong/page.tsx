@@ -103,16 +103,6 @@ export default function FieldOpsMobilePage() {
   const [locatingUser, setLocatingUser] = React.useState(false);
   const [checkingIn, setCheckingIn] = React.useState(false);
   const [lastEvent, setLastEvent] = React.useState<any | null>(null);
-  const [isUpdatingProjectLocation, setIsUpdatingProjectLocation] = React.useState(false);
-
-  // Manual GPS Edit Modal State
-  const [isLocationModalOpen, setIsLocationModalOpen] = React.useState(false);
-  const [manualAddress, setManualAddress] = React.useState("");
-  const [manualLat, setManualLat] = React.useState("");
-  const [manualLon, setManualLon] = React.useState("");
-  const [mapsLinkInput, setMapsLinkInput] = React.useState("");
-  const [resolvingMapsUrl, setResolvingMapsUrl] = React.useState(false);
-  const [geocodingAddress, setGeocodingAddress] = React.useState(false);
 
   // Live WebRTC Camera Stream State
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -357,178 +347,6 @@ export default function FieldOpsMobilePage() {
     }
     window.open(targetUrl, "_blank", "noopener,noreferrer");
   };
-
-  // Mở Modal Chỉnh sửa Tọa độ thủ công
-  const handleOpenEditLocationModal = (task: any) => {
-    setManualAddress(task?.projectAddress || "");
-    setManualLat(task?.projectLat ? String(task.projectLat) : userCoords ? String(userCoords.latitude) : "");
-    setManualLon(task?.projectLon ? String(task.projectLon) : userCoords ? String(userCoords.longitude) : "");
-    setMapsLinkInput("");
-    setIsLocationModalOpen(true);
-  };
-
-  // Dò tìm tên & địa chỉ từ Tọa độ GPS (Reverse Geocoding)
-  const handleReverseGeocode = async (latStr?: string, lonStr?: string, silent: boolean = false) => {
-    const lat = Number(latStr || manualLat);
-    const lon = Number(lonStr || manualLon);
-    if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) {
-      if (!silent) toast.error("Vui lòng nhập hoặc chọn tọa độ hợp lệ trước");
-      return;
-    }
-
-    try {
-      setGeocodingAddress(true);
-      const res = await fetch("/api/field/reverse-geocode", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: lat, longitude: lon }),
-      });
-      const data = await res.json();
-
-      if (data.address) {
-        setManualAddress(data.address);
-        if (!silent) {
-          toast.success(`Đã tự động tìm thấy địa chỉ: ${data.address}`);
-        }
-      } else if (!silent) {
-        toast.info("Chưa tìm thấy tên địa chỉ tự động, bạn có thể gõ trực tiếp vào ô");
-      }
-    } catch {
-      if (!silent) {
-        toast.info("Không thể kết nối dịch vụ bản đồ, bạn có thể tự nhập địa chỉ");
-      }
-    } finally {
-      setGeocodingAddress(false);
-    }
-  };
-
-  // Bóc tách nhanh chuỗi tọa độ hoặc link Google Maps
-  const handleParseMapsInput = (input: string) => {
-    setMapsLinkInput(input);
-    if (!input.trim()) return;
-
-    // Trường hợp 1: Dạng chuỗi số "10.846090, 106.792672" hoặc "10.846090 106.792672"
-    const plainCoordMatch = input.match(/(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)/);
-    if (plainCoordMatch) {
-      setManualLat(plainCoordMatch[1]);
-      setManualLon(plainCoordMatch[2]);
-      toast.success(`Đã nhận diện tọa độ: ${plainCoordMatch[1]}, ${plainCoordMatch[2]}`);
-      handleReverseGeocode(plainCoordMatch[1], plainCoordMatch[2], true);
-      return;
-    }
-
-    // Trường hợp 2: Dạng URL @10.846090,106.792672 hoặc q=10.846090,106.792672
-    const urlMatch = input.match(/[@=](-?\d+\.\d+)[,/](-?\d+\.\d+)/);
-    if (urlMatch) {
-      setManualLat(urlMatch[1]);
-      setManualLon(urlMatch[2]);
-      toast.success(`Đã trích xuất tọa độ từ URL: ${urlMatch[1]}, ${urlMatch[2]}`);
-      handleReverseGeocode(urlMatch[1], urlMatch[2], true);
-      return;
-    }
-
-    // Trường hợp 3: Link rút gọn maps.app.goo.gl hoặc goo.gl
-    if (input.includes("maps.app.goo.gl") || input.includes("goo.gl") || input.includes("google.com/maps")) {
-      handleExtractCoordinatesFromLink(input);
-    }
-  };
-
-  // Trích xuất tọa độ từ backend bằng API resolve-maps-url
-  const handleExtractCoordinatesFromLink = async (customInput?: string) => {
-    const inputToResolve = (customInput || mapsLinkInput || "").trim();
-    if (!inputToResolve) {
-      toast.error("Vui lòng dán link Google Maps hoặc chuỗi tọa độ vào ô");
-      return;
-    }
-
-    try {
-      setResolvingMapsUrl(true);
-      const res = await fetch("/api/field/resolve-maps-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: inputToResolve }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Không thể trích xuất tọa độ từ liên kết này");
-      }
-
-      const lat = String(data.latitude);
-      const lon = String(data.longitude);
-      setManualLat(lat);
-      setManualLon(lon);
-
-      if (data.address || data.placeName) {
-        setManualAddress(data.address || data.placeName);
-      }
-
-      toast.success(
-        `Đã lấy ra tọa độ thành công: ${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}${data.address ? ` (${data.address})` : ""}`
-      );
-    } catch (err: any) {
-      toast.error(err.message || "Lỗi giải mã liên kết");
-    } finally {
-      setResolvingMapsUrl(false);
-    }
-  };
-
-  // Lưu Tọa độ & Địa chỉ Công trình theo form nhập
-  const handleSaveCustomLocation = async () => {
-    const lat = Number(manualLat);
-    const lon = Number(manualLon);
-    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      toast.error("Vui lòng nhập tọa độ hợp lệ (Vĩ độ: -90..90, Kinh độ: -180..180)");
-      return;
-    }
-    if (!selectedTask?.projectId) {
-      toast.error("Không tìm thấy thông tin dự án");
-      return;
-    }
-
-    try {
-      setIsUpdatingProjectLocation(true);
-      const addressToSend = manualAddress.trim();
-      const res = await fetch("/api/field/update-project-location", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: selectedTask.projectId,
-          latitude: lat,
-          longitude: lon,
-          address: addressToSend || undefined,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Không thể lưu tọa độ dự án");
-
-      const finalAddress = data.project?.address || addressToSend || selectedTask.projectAddress;
-
-      toast.success(`Đã cập nhật vị trí công trình: ${finalAddress} (${lat.toFixed(5)}, ${lon.toFixed(5)})`);
-
-      setSelectedTask((prev: any) => ({
-        ...prev,
-        projectAddress: finalAddress,
-        projectLat: lat,
-        projectLon: lon,
-      }));
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.projectId === selectedTask.projectId
-            ? { ...t, projectAddress: finalAddress, projectLat: lat, projectLon: lon }
-            : t
-        )
-      );
-      setIsLocationModalOpen(false);
-    } catch (err: any) {
-      toast.error(err.message || "Lỗi cập nhật");
-    } finally {
-      setIsUpdatingProjectLocation(false);
-    }
-  };
-
-
 
   // 1. GPS Check-in / Check-out
   const handleGpsCheckIn = async (type: "check_in" | "check_out") => {
@@ -1526,24 +1344,14 @@ export default function FieldOpsMobilePage() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 pt-1">
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => handleOpenNavigation(selectedTask)}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-xs active:scale-95 transition"
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-xs active:scale-95 transition"
                   >
                     <Compass className="w-4 h-4" />
                     <span>Dẫn đường Google Maps</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditLocationModal(selectedTask)}
-                    className="inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition"
-                    title="Cập nhật vị trí & tọa độ công trình"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Sửa vị trí</span>
                   </button>
                 </div>
               </div>
@@ -1683,141 +1491,6 @@ export default function FieldOpsMobilePage() {
           </div>
         </div>
 
-        {/* Modal Chỉnh sửa Tọa độ & Địa chỉ Công trình */}
-        <Modal
-          isOpen={isLocationModalOpen}
-          onClose={() => setIsLocationModalOpen(false)}
-          title="Cập Nhật Vị Trí & Tọa Độ GPS Công Trình"
-          description={`Dự án: ${selectedTask?.projectName || "Công trình thi công"}`}
-          maxWidth="md"
-        >
-          <div className="space-y-4 text-xs pt-1">
-            {/* Nhận diện từ Google Maps Link */}
-            <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <label className="font-bold text-slate-800 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-blue-600" />
-                Dán nhanh từ link Google Maps hoặc chuỗi tọa độ:
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="VD: https://maps.app.goo.gl/391e7ifykHmV19AH7"
-                  value={mapsLinkInput}
-                  onChange={(e) => handleParseMapsInput(e.target.value)}
-                  className="text-xs bg-white flex-1 font-mono"
-                />
-                <button
-                  type="button"
-                  disabled={resolvingMapsUrl || !mapsLinkInput.trim()}
-                  onClick={() => handleExtractCoordinatesFromLink()}
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shrink-0 transition disabled:opacity-50 active:scale-95 shadow-2xs"
-                  title="Bấm để lấy tọa độ từ link Google Maps"
-                >
-                  <Search className={`w-3.5 h-3.5 ${resolvingMapsUrl ? "animate-spin" : ""}`} />
-                  <span>{resolvingMapsUrl ? "Đang lấy..." : "Lấy tọa độ"}</span>
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Hỗ trợ cả link rút gọn (maps.app.goo.gl), link web hoặc chuỗi tọa độ (10.846090, 106.792672).
-              </p>
-            </div>
-
-            {/* Nhập Tên & Địa chỉ hiển thị */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="font-bold text-slate-700 block">
-                  Địa chỉ công trình thực tế *
-                </label>
-                <button
-                  type="button"
-                  disabled={geocodingAddress || !manualLat || !manualLon}
-                  onClick={() => handleReverseGeocode(manualLat, manualLon, false)}
-                  className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline disabled:opacity-40"
-                  title="Tự động dò địa chỉ từ vĩ độ và kinh độ"
-                >
-                  <Compass className={`w-3 h-3 ${geocodingAddress ? "animate-spin" : ""}`} />
-                  <span>{geocodingAddress ? "Đang dò..." : "Dò địa chỉ từ tọa độ"}</span>
-                </button>
-              </div>
-              <Input
-                type="text"
-                placeholder="VD: 191 Bà Triệu, Phường Lê Đại Hành, Quận Hai Bà Trưng, Hà Nội"
-                value={manualAddress}
-                onChange={(e) => setManualAddress(e.target.value)}
-                className="text-xs bg-white"
-              />
-            </div>
-
-            {/* Nhập Vĩ độ / Kinh độ */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Vĩ độ (Latitude) *
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  placeholder="VD: 10.846090"
-                  value={manualLat}
-                  onChange={(e) => setManualLat(e.target.value)}
-                  className="text-xs font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Kinh độ (Longitude) *
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  placeholder="VD: 106.792672"
-                  value={manualLon}
-                  onChange={(e) => setManualLon(e.target.value)}
-                  className="text-xs font-mono"
-                />
-              </div>
-            </div>
-
-            {/* Nút Lấy GPS thiết bị */}
-            {userCoords && (
-              <button
-                type="button"
-                onClick={() => {
-                  const latStr = String(userCoords.latitude);
-                  const lonStr = String(userCoords.longitude);
-                  setManualLat(latStr);
-                  setManualLon(lonStr);
-                  handleReverseGeocode(latStr, lonStr, true);
-                  toast.success("Đã điền tọa độ GPS thiết bị hiện tại của bạn!");
-                }}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold flex items-center justify-center gap-1.5 transition border border-slate-200 text-xs"
-              >
-                <Crosshair className="w-3.5 h-3.5 text-blue-600" />
-                <span>Điền tọa độ GPS thiết bị ({userCoords.latitude.toFixed(5)}, {userCoords.longitude.toFixed(5)})</span>
-              </button>
-            )}
-
-            {/* Nút Lưu */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setIsLocationModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-xl font-semibold transition"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={isUpdatingProjectLocation || !manualLat || !manualLon}
-                onClick={handleSaveCustomLocation}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>{isUpdatingProjectLocation ? "Đang lưu..." : "Lưu Vị Trí & Tọa Độ"}</span>
-              </button>
-            </div>
-          </div>
-        </Modal>
       </div>
     );
   }
@@ -1974,7 +1647,7 @@ export default function FieldOpsMobilePage() {
                   </button>
                 </div>
 
-                <div className="border-t border-slate-200 pt-2.5 flex items-start justify-between gap-2">
+                <div className="border-t border-slate-200 pt-2.5">
                   <div className="min-w-0">
                     <span className="text-slate-500 block font-medium">Tọa độ công trình:</span>
                     {hasProjectGps ? (
@@ -1982,22 +1655,12 @@ export default function FieldOpsMobilePage() {
                         {Number(selectedTask.projectLat).toFixed(6)}, {Number(selectedTask.projectLon).toFixed(6)}
                       </span>
                     ) : (
-                      <span className="text-amber-700 font-semibold block">Chưa ghim tọa độ dự án</span>
+                      <span className="text-amber-700 font-semibold block">Chưa ghim tọa độ dự án (liên hệ quản lý)</span>
                     )}
                     <span className="text-[11px] text-slate-500 truncate block mt-0.5">
                       {selectedTask?.projectAddress || selectedTask?.projectName}
                     </span>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditLocationModal(selectedTask)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold border border-slate-300 rounded-lg text-xs transition shadow-2xs shrink-0"
-                    title="Chỉnh sửa vị trí / tọa độ công trình"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Sửa tọa độ</span>
-                  </button>
                 </div>
               </div>
 
@@ -2054,112 +1717,6 @@ export default function FieldOpsMobilePage() {
           </div>
         </div>
 
-        {/* Modal Chỉnh sửa Tọa độ Công trình */}
-        <Modal
-          isOpen={isLocationModalOpen}
-          onClose={() => setIsLocationModalOpen(false)}
-          title="Cập Nhật Tọa Độ GPS Công Trình"
-          description={`Dự án: ${selectedTask?.projectName || "Công trình thi công"}`}
-          maxWidth="md"
-        >
-          <div className="space-y-4 text-xs pt-1">
-            {/* Nhận diện từ Google Maps Link */}
-            <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <label className="font-bold text-slate-800 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-blue-600" />
-                Dán nhanh từ link Google Maps hoặc chuỗi tọa độ:
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="VD: https://maps.app.goo.gl/391e7ifykHmV19AH7"
-                  value={mapsLinkInput}
-                  onChange={(e) => handleParseMapsInput(e.target.value)}
-                  className="text-xs bg-white flex-1 font-mono"
-                />
-                <button
-                  type="button"
-                  disabled={resolvingMapsUrl || !mapsLinkInput.trim()}
-                  onClick={() => handleExtractCoordinatesFromLink()}
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shrink-0 transition disabled:opacity-50 active:scale-95 shadow-2xs"
-                  title="Bấm để lấy tọa độ từ link Google Maps"
-                >
-                  <Search className={`w-3.5 h-3.5 ${resolvingMapsUrl ? "animate-spin" : ""}`} />
-                  <span>{resolvingMapsUrl ? "Đang lấy..." : "Lấy tọa độ"}</span>
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Hỗ trợ cả link rút gọn (maps.app.goo.gl), link web hoặc chuỗi tọa độ (10.846090, 106.792672).
-              </p>
-            </div>
-
-            {/* Nhập Vĩ độ / Kinh độ */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Vĩ độ (Latitude) *
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  placeholder="VD: 10.846090"
-                  value={manualLat}
-                  onChange={(e) => setManualLat(e.target.value)}
-                  className="text-xs font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Kinh độ (Longitude) *
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  placeholder="VD: 106.792672"
-                  value={manualLon}
-                  onChange={(e) => setManualLon(e.target.value)}
-                  className="text-xs font-mono"
-                />
-              </div>
-            </div>
-
-            {/* Nút Lấy GPS thiết bị */}
-            {userCoords && (
-              <button
-                type="button"
-                onClick={() => {
-                  setManualLat(String(userCoords.latitude));
-                  setManualLon(String(userCoords.longitude));
-                  toast.success("Đã điền tọa độ GPS thiết bị hiện tại của bạn!");
-                }}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-bold flex items-center justify-center gap-1.5 transition border border-slate-200 text-xs"
-              >
-                <Crosshair className="w-3.5 h-3.5 text-blue-600" />
-                <span>Điền tọa độ GPS thiết bị của tôi ({userCoords.latitude.toFixed(5)}, {userCoords.longitude.toFixed(5)})</span>
-              </button>
-            )}
-
-            {/* Nút Lưu */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setIsLocationModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-xl font-semibold transition"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={isUpdatingProjectLocation || !manualLat || !manualLon}
-                onClick={handleSaveCustomLocation}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>{isUpdatingProjectLocation ? "Đang lưu..." : "Lưu Tọa Độ"}</span>
-              </button>
-            </div>
-          </div>
-        </Modal>
       </div>
     );
   }

@@ -84,6 +84,9 @@ import {
   UserPlus,
   Copy,
   Layers,
+  Globe,
+  Crosshair,
+  Navigation,
 } from "lucide-react";
 import type {
   ProjectDto,
@@ -1084,15 +1087,165 @@ export default function ProjectDetailPage() {
 
   // Modal Sửa thông tin dự án
   const [isEditProjectOpen, setIsEditProjectOpen] = React.useState(false);
-  const [editProjectData, setEditProjectData] = React.useState({
+  const [editProjectData, setEditProjectData] = React.useState<{
+    name: string;
+    address: string;
+    customerId: string;
+    managerMembershipId: string;
+    startDate: string;
+    dueDate: string;
+    latitude: string | number | undefined;
+    longitude: string | number | undefined;
+  }>({
     name: "",
     address: "",
     customerId: "",
     managerMembershipId: "",
     startDate: "",
     dueDate: "",
+    latitude: "",
+    longitude: "",
   });
   const [savingProject, setSavingProject] = React.useState(false);
+
+  // Smart Google Maps & GPS States for Edit Project Modal
+  const [editMapsLinkInput, setEditMapsLinkInput] = React.useState("");
+  const [resolvingEditMapsUrl, setResolvingEditMapsUrl] = React.useState(false);
+  const [geocodingEditAddress, setGeocodingEditAddress] = React.useState(false);
+  const [locatingEditUser, setLocatingEditUser] = React.useState(false);
+
+  // Dò tìm tên & địa chỉ từ Tọa độ GPS (Reverse Geocoding)
+  const handleReverseGeocodeEdit = async (latStr?: string, lonStr?: string, silent: boolean = false) => {
+    const lat = Number(latStr ?? editProjectData.latitude);
+    const lon = Number(lonStr ?? editProjectData.longitude);
+    if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) {
+      if (!silent) toast.error("Vui lòng nhập hoặc chọn tọa độ hợp lệ trước");
+      return;
+    }
+
+    try {
+      setGeocodingEditAddress(true);
+      const res = await fetch("/api/field/reverse-geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: lat, longitude: lon }),
+      });
+      const data = await res.json();
+
+      if (data.address) {
+        setEditProjectData((prev) => ({ ...prev, address: data.address }));
+        if (!silent) {
+          toast.success(`Đã tự động tìm thấy địa chỉ: ${data.address}`);
+        }
+      } else if (!silent) {
+        toast.info("Chưa tìm thấy tên địa chỉ tự động, bạn có thể gõ trực tiếp vào ô");
+      }
+    } catch {
+      if (!silent) {
+        toast.info("Không thể kết nối dịch vụ bản đồ, bạn có thể tự nhập địa chỉ");
+      }
+    } finally {
+      setGeocodingEditAddress(false);
+    }
+  };
+
+  // Trích xuất tọa độ từ backend bằng API resolve-maps-url
+  const handleExtractCoordinatesEdit = async (customInput?: string) => {
+    const inputToResolve = (customInput || editMapsLinkInput || "").trim();
+    if (!inputToResolve) {
+      toast.error("Vui lòng dán link Google Maps hoặc chuỗi tọa độ vào ô");
+      return;
+    }
+
+    try {
+      setResolvingEditMapsUrl(true);
+      const res = await fetch("/api/field/resolve-maps-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: inputToResolve }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Không thể trích xuất tọa độ từ liên kết này");
+      }
+
+      const lat = String(data.latitude);
+      const lon = String(data.longitude);
+      setEditProjectData((prev) => ({
+        ...prev,
+        latitude: lat,
+        longitude: lon,
+        address: prev.address ? prev.address : (data.address || data.placeName || prev.address),
+      }));
+
+      toast.success(
+        `Đã lấy ra tọa độ thành công: ${Number(lat).toFixed(6)}, ${Number(lon).toFixed(6)}${data.address ? ` (${data.address})` : ""}`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Lỗi giải mã liên kết");
+    } finally {
+      setResolvingEditMapsUrl(false);
+    }
+  };
+
+  // Bóc tách nhanh chuỗi tọa độ hoặc link Google Maps
+  const handleParseMapsInputEdit = (input: string) => {
+    setEditMapsLinkInput(input);
+    if (!input.trim()) return;
+
+    const plainCoordMatch = input.match(/(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)/);
+    if (plainCoordMatch) {
+      const lat = plainCoordMatch[1];
+      const lon = plainCoordMatch[2];
+      setEditProjectData((prev) => ({ ...prev, latitude: lat, longitude: lon }));
+      toast.success(`Đã nhận diện tọa độ: ${lat}, ${lon}`);
+      handleReverseGeocodeEdit(lat, lon, true);
+      return;
+    }
+
+    const urlMatch = input.match(/[@=](-?\d+\.\d+)[,/](-?\d+\.\d+)/);
+    if (urlMatch) {
+      const lat = urlMatch[1];
+      const lon = urlMatch[2];
+      setEditProjectData((prev) => ({ ...prev, latitude: lat, longitude: lon }));
+      toast.success(`Đã trích xuất tọa độ từ URL: ${lat}, ${lon}`);
+      handleReverseGeocodeEdit(lat, lon, true);
+      return;
+    }
+
+    if (input.includes("maps.app.goo.gl") || input.includes("goo.gl") || input.includes("google.com/maps")) {
+      handleExtractCoordinatesEdit(input);
+    }
+  };
+
+  // Lấy GPS thiết bị hiện tại
+  const handleGetDeviceLocationEdit = () => {
+    if (!navigator.geolocation) {
+      toast.error("Trình duyệt không hỗ trợ định vị GPS");
+      return;
+    }
+    setLocatingEditUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = String(pos.coords.latitude);
+        const lon = String(pos.coords.longitude);
+        setEditProjectData((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lon,
+        }));
+        setLocatingEditUser(false);
+        toast.success(`Đã điền GPS thiết bị: ${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}`);
+        handleReverseGeocodeEdit(lat, lon, true);
+      },
+      (err) => {
+        setLocatingEditUser(false);
+        toast.error(`Không thể lấy GPS: ${err.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   // Modal Thêm Giai đoạn (Stage)
   const [isCreateStageOpen, setIsCreateStageOpen] = React.useState(false);
@@ -1655,6 +1808,8 @@ export default function ProjectDetailPage() {
           managerMembershipId: pData.project?.managerMembershipId || "",
           startDate: pData.project?.startDate || "",
           dueDate: pData.project?.dueDate || "",
+          latitude: pData.project?.latitude ?? "",
+          longitude: pData.project?.longitude ?? "",
         });
       }
       if (tRes.ok) {
@@ -1962,6 +2117,14 @@ export default function ProjectDetailPage() {
           managerMembershipId: editProjectData.managerMembershipId || null,
           startDate: editProjectData.startDate || null,
           dueDate: editProjectData.dueDate || null,
+          latitude:
+            editProjectData.latitude !== "" && editProjectData.latitude !== undefined
+              ? Number(editProjectData.latitude)
+              : null,
+          longitude:
+            editProjectData.longitude !== "" && editProjectData.longitude !== undefined
+              ? Number(editProjectData.longitude)
+              : null,
         }),
       });
       const data = await res.json();
@@ -7606,35 +7769,133 @@ export default function ProjectDetailPage() {
 
             <div className="space-y-3">
               <div>
-                <label className="block font-semibold mb-1">Địa chỉ thi công</label>
+                <label className="block font-semibold mb-1">Ngày khởi công</label>
                 <Input
-                  value={editProjectData.address}
-                  onChange={(e) => setEditProjectData({ ...editProjectData, address: e.target.value })}
+                  type="date"
+                  value={editProjectData.startDate}
+                  onChange={(e) => setEditProjectData({ ...editProjectData, startDate: e.target.value })}
                   className="text-xs"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold mb-1">Ngày khởi công</label>
-                  <Input
-                    type="date"
-                    value={editProjectData.startDate}
-                    onChange={(e) => setEditProjectData({ ...editProjectData, startDate: e.target.value })}
-                    className="text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Hạn bàn giao</label>
-                  <Input
-                    type="date"
-                    value={editProjectData.dueDate}
-                    onChange={(e) => setEditProjectData({ ...editProjectData, dueDate: e.target.value })}
-                    className="text-xs"
-                  />
-                </div>
+              <div>
+                <label className="block font-semibold mb-1">Hạn bàn giao</label>
+                <Input
+                  type="date"
+                  value={editProjectData.dueDate}
+                  onChange={(e) => setEditProjectData({ ...editProjectData, dueDate: e.target.value })}
+                  className="text-xs"
+                />
               </div>
             </div>
+          </div>
+
+          {/* KHỐI VỊ TRÍ & TỌA ĐỘ GPS CÔNG TRÌNH */}
+          <div className="bg-gradient-to-br from-slate-50 to-blue-50/40 p-3.5 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                Vị Trí & Tọa Độ GPS Công Trình (Phục vụ dẫn đường & điểm danh thợ)
+              </span>
+              <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                GPS Bán kính &lt; 500m
+              </span>
+            </div>
+
+            {/* Dán link Google Maps hoặc chuỗi tọa độ */}
+            <div className="space-y-1 bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+              <label className="font-bold text-slate-700 flex items-center gap-1.5 text-xs">
+                <Globe className="w-3.5 h-3.5 text-blue-600" />
+                Dán nhanh từ link Google Maps hoặc chuỗi tọa độ:
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="VD: https://maps.app.goo.gl/391e7ifykHmV19AH7 hoặc 10.846090, 106.792672"
+                  value={editMapsLinkInput}
+                  onChange={(e) => handleParseMapsInputEdit(e.target.value)}
+                  className="text-xs bg-slate-50 flex-1 font-mono h-8"
+                />
+                <button
+                  type="button"
+                  disabled={resolvingEditMapsUrl || !editMapsLinkInput.trim()}
+                  onClick={() => handleExtractCoordinatesEdit()}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shrink-0 transition disabled:opacity-50 active:scale-95 shadow-2xs"
+                  title="Bấm để lấy tọa độ từ link Google Maps"
+                >
+                  <Search className={`w-3.5 h-3.5 ${resolvingEditMapsUrl ? "animate-spin" : ""}`} />
+                  <span>{resolvingEditMapsUrl ? "Đang lấy..." : "Lấy tọa độ"}</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Hỗ trợ link rút gọn (maps.app.goo.gl), link web hoặc chuỗi tọa độ (10.846090, 106.792672).
+              </p>
+            </div>
+
+            {/* Nhập Địa chỉ & Dò địa chỉ từ tọa độ */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-slate-700 block text-xs">
+                  Địa Chỉ Thi Công Công Trình Thực Tế
+                </label>
+                <button
+                  type="button"
+                  disabled={geocodingEditAddress || !editProjectData.latitude || !editProjectData.longitude}
+                  onClick={() => handleReverseGeocodeEdit(String(editProjectData.latitude), String(editProjectData.longitude), false)}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 hover:underline disabled:opacity-40"
+                  title="Tự động dò địa chỉ từ vĩ độ và kinh độ"
+                >
+                  <Compass className={`w-3 h-3 ${geocodingEditAddress ? "animate-spin" : ""}`} />
+                  <span>{geocodingEditAddress ? "Đang dò..." : "Dò địa chỉ từ tọa độ"}</span>
+                </button>
+              </div>
+              <Input
+                placeholder="VD: Gian hàng T01, TTTM Times City, 458 Minh Khai, Hai Bà Trưng, Hà Nội"
+                value={editProjectData.address}
+                onChange={(e) => setEditProjectData({ ...editProjectData, address: e.target.value })}
+                className="text-xs bg-white"
+              />
+            </div>
+
+            {/* Nhập Vĩ độ & Kinh độ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 text-xs">
+                  Vĩ độ GPS (Latitude)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="VD: 21.011667 hoặc 10.846090"
+                  value={editProjectData.latitude ?? ""}
+                  onChange={(e) => setEditProjectData({ ...editProjectData, latitude: e.target.value })}
+                  className="text-xs font-mono bg-white"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1 text-xs">
+                  Kinh độ GPS (Longitude)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="VD: 105.849444 hoặc 106.792672"
+                  value={editProjectData.longitude ?? ""}
+                  onChange={(e) => setEditProjectData({ ...editProjectData, longitude: e.target.value })}
+                  className="text-xs font-mono bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Nút Lấy GPS thiết bị hiện tại */}
+            <button
+              type="button"
+              disabled={locatingEditUser}
+              onClick={handleGetDeviceLocationEdit}
+              className="w-full py-1.5 bg-white hover:bg-slate-100 text-slate-700 rounded-lg font-bold flex items-center justify-center gap-1.5 transition border border-slate-200 text-xs shadow-2xs active:scale-95"
+            >
+              <Crosshair className={`w-3.5 h-3.5 ${locatingEditUser ? "animate-spin text-blue-600" : "text-blue-600"}`} />
+              <span>{locatingEditUser ? "Đang dò GPS thiết bị..." : "Điền tọa độ GPS thiết bị hiện tại của tôi"}</span>
+            </button>
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
