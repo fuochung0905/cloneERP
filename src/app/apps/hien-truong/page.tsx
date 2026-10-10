@@ -41,8 +41,12 @@ import {
   Globe,
   Sliders,
   Search,
+  Users,
+  Bell,
 } from "lucide-react";
 import { Badge, Button, Input, Modal, toast } from "@/components/ui";
+import { TimeAttendanceWidget } from "@/components/dashboard/TimeAttendanceWidget";
+import { EmployeeSelfServiceModals } from "@/components/dashboard/EmployeeSelfServiceModals";
 
 type ActiveScreen =
   | "task_list"
@@ -837,14 +841,36 @@ function FieldOpsContent() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 sm:self-center">
+              <div className="flex items-center gap-2 sm:self-center flex-wrap">
+                <Link
+                  href="/apps/hrm"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition border border-slate-700 shadow-2xs"
+                  title="Mở ứng dụng HRM mở rộng"
+                >
+                  <Users className="w-3.5 h-3.5 text-blue-400" />
+                  <span>App HRM mở rộng</span>
+                </Link>
+
                 <Link
                   href="/cong-viec"
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition border border-slate-700 shadow-2xs"
                 >
                   <Layers className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Bàn điều hành việc &rarr;</span>
+                  <span className="hidden sm:inline">Bàn điều hành việc &rarr;</span>
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchMyTasks();
+                    refreshUserLocation(false);
+                  }}
+                  disabled={loading || locatingUser}
+                  className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition active:scale-95"
+                  title="Làm mới dữ liệu"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading || locatingUser ? "animate-spin text-blue-400" : ""}`} />
+                </button>
               </div>
             </div>
 
@@ -882,6 +908,12 @@ function FieldOpsContent() {
               </button>
             </div>
           </div>
+
+          {/* 1. Thanh Chấm Công 1-Chạm Hiện Trường & Live Working Timer */}
+          <TimeAttendanceWidget theme="dark" />
+
+          {/* 2. Bộ 3 Tiện Ích Hành Chính: Xin Nghỉ Phép, Làm Thêm (OT), Giải Trình Chấm Công */}
+          <EmployeeSelfServiceModals theme="dark" />
 
           {/* Metric KPI Summary Cards Row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
