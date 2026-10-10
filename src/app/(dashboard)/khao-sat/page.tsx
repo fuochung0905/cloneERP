@@ -96,6 +96,7 @@ export default function SiteSurveyPage() {
   const [editingSurveyId, setEditingSurveyId] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [customers, setCustomers] = React.useState<any[]>([]);
+  const [projects, setProjects] = React.useState<any[]>([]);
 
   // Modal Bóc Tách BOM Nhanh (0ms Latency Instant Modal)
   const [bomSurvey, setBomSurvey] = React.useState<SiteSurveyDto | null>(null);
@@ -123,6 +124,7 @@ export default function SiteSurveyPage() {
     regionKV: "HCM",
     workType: "BẢNG HIỆU",
     customerId: "",
+    projectId: "",
     surveyDate: new Date().toISOString().split("T")[0],
     workItemsText: "- bảng alu 2.38m x 6m\n- bảng bạt UV 0.9m x 5.9m",
     signMaterial: "Bảng alu ngoài trời",
@@ -167,10 +169,23 @@ export default function SiteSurveyPage() {
     }
   }, []);
 
+  const fetchProjects = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects?limit=100");
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data.projects || data.items || []);
+      }
+    } catch (err) {
+      console.error("Lỗi tải danh sách dự án:", err);
+    }
+  }, []);
+
   React.useEffect(() => {
     fetchSurveys();
     fetchCustomers();
-  }, [fetchSurveys, fetchCustomers]);
+    fetchProjects();
+  }, [fetchSurveys, fetchCustomers, fetchProjects]);
 
   // Helper lấy danh sách bullet items từ phiếu khảo sát
   const getSurveyWorkItems = (survey: SiteSurveyDto): string[] => {
@@ -297,6 +312,7 @@ export default function SiteSurveyPage() {
       regionKV: meta.regionKV || "HCM",
       workType: meta.workType || "BẢNG HIỆU",
       customerId: survey.customerId || "",
+      projectId: survey.projectId || "",
       surveyDate: survey.surveyDate || new Date().toISOString().split("T")[0],
       workItemsText: workItemsText || "- ks bảng",
       signMaterial: meta.signMaterial || "Bảng alu ngoài trời",
@@ -539,6 +555,7 @@ export default function SiteSurveyPage() {
           title: formData.dealerName.trim(),
           address: formData.dealerAddress.trim(),
           customerId: formData.customerId || null,
+          projectId: formData.projectId || null,
           surveyDate: formData.surveyDate,
           widthMeters: Number(formData.widthMeters) || 0,
           heightMeters: Number(formData.heightMeters) || 0,
@@ -1651,6 +1668,27 @@ export default function SiteSurveyPage() {
                 className="text-xs"
               />
             </div>
+
+            {/* Dự án liên kết (nếu có) */}
+            {projects.length > 0 && (
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Dự án thi công liên kết (Tùy chọn)
+                </label>
+                <select
+                  value={formData.projectId}
+                  onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white"
+                >
+                  <option value="">-- Không liên kết dự án (Khảo sát độc lập) --</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} - {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* DANH SÁCH HẠNG MỤC CÔNG VIỆC & KÍCH THƯỚC (Gõ gạch đầu dòng) */}
             <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 space-y-2">
