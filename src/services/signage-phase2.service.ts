@@ -424,10 +424,6 @@ export class SignagePhase2Service {
     const survey = await this.getSiteSurveyById(surveyId);
     if (!survey) throw new Error("Không tìm thấy phiếu khảo sát!");
 
-    if (!survey.customerId) {
-      throw new Error("Phiếu khảo sát phải gắn với một Khách hàng trước khi lập báo giá!");
-    }
-
     const area = Math.round((survey.widthMeters * survey.heightMeters) * 100) / 100;
     const estUnitPrice = 1850000; // Đơn giá dự toán tham chiếu chuẩn: 1.850.000 đ/m2 (Alu + Chữ nổi mica đèn LED)
     const lineTotal = Math.round(area > 0 ? area * estUnitPrice : 5000000);
@@ -435,6 +431,55 @@ export class SignagePhase2Service {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+
+      // 0. Tự động liên kết hoặc tạo khách hàng nếu chưa có
+      let resolvedCustomerId = survey.customerId;
+      if (!resolvedCustomerId) {
+        const dealerName = survey.metadata?.dealerName || survey.title || "Khách hàng khảo sát";
+        const dealerPhone = survey.metadata?.dealerPhone || "";
+        const pRes = await client.query(
+          "SELECT id FROM erp.partners WHERE organization_id = $1 AND (name = $2 OR (phone IS NOT NULL AND phone != '' AND phone = $3)) LIMIT 1",
+          [orgId, dealerName, dealerPhone]
+        );
+        if (pRes.rows.length > 0) {
+          resolvedCustomerId = pRes.rows[0].id;
+        } else {
+          const partnerCode = `KH-${Date.now().toString().slice(-6)}`;
+          const insRes = await client.query(
+            `INSERT INTO erp.partners(organization_id, code, name, phone, address, is_customer, is_supplier, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, true, false, $6, $6) RETURNING id`,
+            [orgId, partnerCode, dealerName, dealerPhone, survey.address, userId]
+          );
+          resolvedCustomerId = insRes.rows[0].id;
+        }
+      }
+
+      // Đảm bảo survey tồn tại trong DB
+      let actualSurveyId = survey.id;
+      const sCheck = await client.query("SELECT id FROM erp.site_surveys WHERE id = $1 AND organization_id = $2", [actualSurveyId, orgId]);
+      if (sCheck.rows.length === 0) {
+        const insertSurvey = await client.query(
+          `INSERT INTO erp.site_surveys(
+            organization_id, code, customer_id, title, address, survey_date, status,
+            width_meters, height_meters, depth_meters, metadata, created_by, updated_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9, $10, $11, $11) RETURNING id`,
+          [
+            orgId,
+            survey.code || "KS-NEW",
+            resolvedCustomerId,
+            survey.title,
+            survey.address,
+            survey.surveyDate || new Date().toISOString().split("T")[0],
+            survey.widthMeters || 0,
+            survey.heightMeters || 0,
+            survey.depthMeters || 0,
+            JSON.stringify(survey.metadata || {}),
+            userId,
+          ]
+        );
+        actualSurveyId = insertSurvey.rows[0].id;
+      }
+
       const quoteCode = await getNextDocumentCode(client, orgId, "quotation", "BG");
 
       // 1. Lấy owner membership
@@ -446,7 +491,7 @@ export class SignagePhase2Service {
         `INSERT INTO erp.quotations(
            organization_id, code, status, customer_id, owner_membership_id, created_by, updated_by
          ) VALUES ($1, $2, 'draft', $3, $4, $5, $5) RETURNING id`,
-        [orgId, quoteCode, survey.customerId, ownerMembershipId, userId]
+        [orgId, quoteCode, resolvedCustomerId, ownerMembershipId, userId]
       );
       const quotationId = qRes.rows[0].id;
 

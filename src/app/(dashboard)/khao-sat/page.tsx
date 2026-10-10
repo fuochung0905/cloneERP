@@ -45,10 +45,17 @@ import {
   Check,
   AlertCircle,
   ExternalLink,
+  Calculator,
+  DollarSign,
+  Box,
+  Cpu,
+  Loader2,
+  FileText,
 } from "lucide-react";
 import { SiteSurveyDto } from "@/services/signage-phase2.service";
 import { useSetPageHeader } from "@/contexts/page-header-context";
 import { useAuthorization } from "@/hooks/use-authorization";
+import { calculateSignageBom, BomCalculationResult } from "@/lib/signage-bom-calculator";
 
 // Danh sách các phân vùng KV thực tế
 const REGIONS_LIST = [
@@ -60,15 +67,6 @@ const REGIONS_LIST = [
   "MIỀN BẮC",
 ];
 
-// Danh sách 5 cột công việc chuẩn thực tế theo ảnh KHỐI LƯỢNG CÔNG VIỆC
-const WORK_TYPES = [
-  { key: "BẢNG HIỆU", label: "BẢNG HIỆU", colorBg: "bg-blue-100", colorText: "text-blue-900", border: "border-blue-200" },
-  { key: "NỘI THẤT / SHOWROOM", label: "HẠNG MỤC NỘI THẤT / SR", colorBg: "bg-purple-100", colorText: "text-purple-900", border: "border-purple-200" },
-  { key: "SỬA CHỮA MIỀN TÂY", label: "SỬA CHỮA MIỀN TÂY / BẢO TRÌ", colorBg: "bg-yellow-200", colorText: "text-yellow-950 font-bold", border: "border-yellow-400" },
-  { key: "KHẢO SÁT", label: "KHẢO SÁT (SURVEY)", colorBg: "bg-cyan-100", colorText: "text-cyan-950 font-bold", border: "border-cyan-300" },
-  { key: "THÙNG RỖNG", label: "THÙNG RỖNG / GIAO MẪU", colorBg: "bg-emerald-100", colorText: "text-emerald-900", border: "border-emerald-200" },
-];
-
 export default function SiteSurveyPage() {
   const router = useRouter();
   const { can } = useAuthorization();
@@ -78,8 +76,9 @@ export default function SiteSurveyPage() {
     subtitle: "Ma trận khối lượng theo khu vực (KV), Bảng hiệu, Sửa chữa, POSM & 1-Click Báo giá / BOM",
     screenCode: "M04-KL-KS",
     quickViews: [
-      { label: "Thiết kế chuẩn Nippon", href: "/du-an/thiet-ke-quy-chuan" },
+      { label: "Bóc Tách BOM Xưởng", href: "/dinh-muc-bom" },
       { label: "Báo giá dự toán", href: "/bao-gia" },
+      { label: "Thiết kế chuẩn Nippon", href: "/du-an/thiet-ke-quy-chuan" },
       { label: "Ứng dụng Hiện Trường", href: "/apps/hien-truong" },
       { label: "Dự án thi công", href: "/du-an" },
     ],
@@ -96,8 +95,15 @@ export default function SiteSurveyPage() {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingSurveyId, setEditingSurveyId] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [convertingId, setConvertingId] = React.useState<string | null>(null);
   const [customers, setCustomers] = React.useState<any[]>([]);
+
+  // Modal Bóc Tách BOM Nhanh (0ms Latency Instant Modal)
+  const [bomSurvey, setBomSurvey] = React.useState<SiteSurveyDto | null>(null);
+  const [savingBom, setSavingBom] = React.useState(false);
+
+  // Modal Báo Giá Dự Toán Nhanh (0ms Latency Instant Modal)
+  const [quoteSurvey, setQuoteSurvey] = React.useState<SiteSurveyDto | null>(null);
+  const [convertingId, setConvertingId] = React.useState<string | null>(null);
 
   // Modal Ký số thực địa
   const [isSignatureModalOpen, setIsSignatureModalOpen] = React.useState(false);
@@ -118,7 +124,6 @@ export default function SiteSurveyPage() {
     workType: "BẢNG HIỆU",
     customerId: "",
     surveyDate: new Date().toISOString().split("T")[0],
-    // Danh sách các dòng hạng mục công việc (mỗi dòng 1 gạch đầu dòng)
     workItemsText: "- bảng alu 2.38m x 6m\n- bảng bạt UV 0.9m x 5.9m",
     signMaterial: "Bảng alu ngoài trời",
     widthMeters: 6.0,
@@ -241,6 +246,30 @@ export default function SiteSurveyPage() {
 
     return map;
   }, [filteredSurveys]);
+
+  // Tính toán BOM bóc tách theo thời gian thực (0ms)
+  const currentBomCalc: BomCalculationResult | null = React.useMemo(() => {
+    if (!bomSurvey) return null;
+    const meta = bomSurvey.metadata || {};
+    const signMaterial = meta.signMaterial || "Bảng alu ngoài trời";
+    const signageType = signMaterial.includes("bạt") ? "canvas_hiflex" : signMaterial.includes("Hộp đèn") ? "lightbox_3m" : "alu_letters";
+
+    return calculateSignageBom({
+      widthMeters: bomSurvey.widthMeters || 6.0,
+      heightMeters: bomSurvey.heightMeters || 2.0,
+      depthMeters: bomSurvey.depthMeters || 0.2,
+      signageType,
+      signMaterial,
+      hasMicaLogo65: meta.hasMicaLogo65 ?? true,
+      hasSideTrim: meta.hasSideTrim ?? true,
+      hasColorStrip: meta.hasColorStrip ?? true,
+      subAccessories: getSurveyWorkItems(bomSurvey).join(", "),
+      displayShelves: meta.displayShelves,
+      furniture: meta.furniture,
+      otherPosm: meta.otherPosm,
+      repairScope: meta.repairScope,
+    });
+  }, [bomSurvey]);
 
   // Xử lý mở Modal tạo mới
   const handleOpenCreateModal = (prefillKV?: string, prefillWorkType?: string) => {
@@ -401,8 +430,8 @@ export default function SiteSurveyPage() {
     }
   };
 
-  // 1-Click chuyển Khảo Sát sang Báo Giá
-  const handleConvertToQuote = async (survey: SiteSurveyDto) => {
+  // 1-Click chuyển Khảo Sát sang Báo Giá (Gửi POST vào DB)
+  const handleConfirmConvertToQuote = async (survey: SiteSurveyDto) => {
     try {
       setConvertingId(survey.id);
       const res = await fetch(`/api/surveys/${survey.id}/convert-quote`, {
@@ -412,6 +441,7 @@ export default function SiteSurveyPage() {
       if (!res.ok) throw new Error(data.error || "Lỗi tạo báo giá");
 
       toast.success(data.message || `Đã tạo báo giá ${data.quotationCode} thành công!`);
+      setQuoteSurvey(null);
       fetchSurveys();
       router.push(`/bao-gia?highlight=${data.quotationId}`);
     } catch (err: any) {
@@ -421,9 +451,10 @@ export default function SiteSurveyPage() {
     }
   };
 
-  // 1-Click tạo BOM từ phiếu khảo sát
-  const handleCreateBom = async (survey: SiteSurveyDto) => {
+  // 1-Click lưu BOM bóc tách vào hệ thống
+  const handleConfirmSaveBom = async (survey: SiteSurveyDto) => {
     try {
+      setSavingBom(true);
       const meta = survey.metadata || {};
       const dealerLabel = meta.dealerName || survey.title;
       const items = getSurveyWorkItems(survey);
@@ -448,16 +479,21 @@ export default function SiteSurveyPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Lỗi lập BOM bóc tách");
 
-      toast.success(`Đã lập thành công BOM ${data.bom?.code || ""}!`);
+      toast.success(`Đã lưu thành công định mức BOM ${data.bom?.code || ""} vào hệ thống!`);
+      setBomSurvey(null);
       if (survey.projectId) {
         router.push(`/du-an/${survey.projectId}?tab=production`);
+      } else {
+        router.push("/dinh-muc-bom");
       }
     } catch (err: any) {
       toast.error(err.message || "Lỗi lập BOM");
+    } finally {
+      setSavingBom(false);
     }
   };
 
-  // Submit form Tạo hoặc Sửa khảo sát (Thực chiến & Tinh gọn)
+  // Submit form Tạo hoặc Sửa khảo sát
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.dealerName.trim()) {
@@ -469,7 +505,6 @@ export default function SiteSurveyPage() {
       return;
     }
 
-    // Phân tách các dòng hạng mục công việc
     const lines = formData.workItemsText
       .split("\n")
       .map((l) => l.trim())
@@ -726,7 +761,7 @@ export default function SiteSurveyPage() {
     {
       title: "⚡ Lập BOM Bóc Tách",
       icon: <Zap className="w-3.5 h-3.5 text-purple-600" />,
-      onClick: (item) => handleCreateBom(item),
+      onClick: (item) => setBomSurvey(item),
     },
     {
       title: "📐 Vẽ Maket Chuẩn Nippon",
@@ -744,7 +779,7 @@ export default function SiteSurveyPage() {
     {
       title: "⚡ Tạo Báo Giá Dự Toán",
       icon: <Sparkles className="w-3.5 h-3.5 text-emerald-600" />,
-      onClick: (item) => handleConvertToQuote(item),
+      onClick: (item) => setQuoteSurvey(item),
     },
     {
       title: "✍️ Ký số hiện trường",
@@ -782,7 +817,7 @@ export default function SiteSurveyPage() {
                 type="button"
                 onClick={() => handleOpenEditModal(survey)}
                 title="Sửa"
-                className="p-1 text-slate-400 hover:text-blue-600 rounded bg-slate-100 hover:bg-blue-50"
+                className="p-1 text-slate-400 hover:text-blue-600 rounded bg-slate-100 hover:bg-blue-50 cursor-pointer"
               >
                 <Edit3 className="w-3 h-3" />
               </button>
@@ -790,7 +825,7 @@ export default function SiteSurveyPage() {
                 type="button"
                 onClick={() => handleDeleteSurvey(survey.id)}
                 title="Xóa"
-                className="p-1 text-slate-400 hover:text-rose-600 rounded bg-slate-100 hover:bg-rose-50"
+                className="p-1 text-slate-400 hover:text-rose-600 rounded bg-slate-100 hover:bg-rose-50 cursor-pointer"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -846,39 +881,39 @@ export default function SiteSurveyPage() {
           </div>
         )}
 
-        {/* Action buttons (1-Click) */}
+        {/* Action buttons (1-Click với phản hồi tức thì 0ms) */}
         <div className="pt-1 flex items-center justify-between gap-1 border-t border-slate-100">
           <button
             type="button"
             onClick={() => setSelectedSurvey(survey)}
-            className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 px-1.5 py-0.5 rounded hover:bg-slate-100"
+            className="text-[10px] font-semibold text-slate-600 hover:text-slate-900 px-1.5 py-0.5 rounded hover:bg-slate-100 cursor-pointer"
           >
             Chi tiết
           </button>
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => handleCreateBom(survey)}
-              title="Lập BOM bóc tách"
-              className="px-1.5 py-0.5 text-[10px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 rounded border border-purple-200"
+              onClick={() => setBomSurvey(survey)}
+              title="Bóc tách BOM vật tư nhanh (0ms)"
+              className="px-2 py-0.5 text-[10px] font-bold bg-purple-50 hover:bg-purple-200 active:scale-95 text-purple-700 rounded border border-purple-200 cursor-pointer transition-all flex items-center gap-0.5"
             >
-              BOM
+              <span>BOM</span>
             </button>
             <button
               type="button"
-              onClick={() => handleConvertToQuote(survey)}
-              title="Lập báo giá dự toán"
-              className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200"
+              onClick={() => setQuoteSurvey(survey)}
+              title="Báo giá dự toán nhanh (0ms)"
+              className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 hover:bg-blue-200 active:scale-95 text-blue-700 rounded border border-blue-200 cursor-pointer transition-all flex items-center gap-0.5"
             >
-              Báo giá
+              <span>Báo giá</span>
             </button>
             <button
               type="button"
               onClick={() => handleOpenSignatureModal(survey)}
-              title="Ký xác nhận"
-              className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded border border-emerald-200"
+              title="Ký xác nhận hiện trường"
+              className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-200 active:scale-95 text-emerald-700 rounded border border-emerald-200 cursor-pointer transition-all"
             >
-              Ký
+              <span>Ký</span>
             </button>
           </div>
         </div>
@@ -1105,7 +1140,6 @@ export default function SiteSurveyPage() {
                   if (regionFilter !== "all" && regionFilter !== region) return null;
                   if (regionSurveys.length === 0 && search) return null;
 
-                  // Phân loại cards theo từng cột
                   const bangHieuCards = regionSurveys.filter(
                     (s) => (s.metadata?.workType || "BẢNG HIỆU") === "BẢNG HIỆU"
                   );
@@ -1249,6 +1283,280 @@ export default function SiteSurveyPage() {
           emptyMessage="Chưa có khối lượng công việc nào phù hợp"
         />
       )}
+
+      {/* MODAL 1: BÓC TÁCH BOM VẬT TƯ NHANH (INSTANT MODAL 0MS) */}
+      <Modal
+        isOpen={Boolean(bomSurvey)}
+        onClose={() => setBomSurvey(null)}
+        title="Bóc Tách Định Mức Kỹ Thuật BOM"
+        description={`Phiếu: ${bomSurvey?.code || ""} • ${bomSurvey?.metadata?.dealerName || bomSurvey?.title || ""}`}
+        maxWidth="4xl"
+      >
+        {bomSurvey && currentBomCalc && (() => {
+          const meta = bomSurvey.metadata || {};
+          const area = Math.round((bomSurvey.widthMeters * bomSurvey.heightMeters) * 100) / 100;
+
+          return (
+            <div className="space-y-4 text-xs">
+              {/* Header Box */}
+              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200 flex items-center justify-between flex-wrap gap-2">
+                <div className="space-y-0.5">
+                  <strong className="text-slate-900 font-bold uppercase text-sm block">
+                    {meta.dealerName || bomSurvey.title}
+                  </strong>
+                  <div className="text-slate-600 flex items-center gap-2 text-[11px]">
+                    <span className="font-semibold text-purple-900">KV: {meta.regionKV || "HCM"}</span>
+                    <span>•</span>
+                    <span className="text-slate-700">{meta.dealerAddress || bomSurvey.address}</span>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10px] text-purple-700 font-semibold block uppercase">Kích thước phủ bì</span>
+                  <strong className="font-mono text-base font-extrabold text-purple-950">
+                    {bomSurvey.widthMeters}m × {bomSurvey.heightMeters}m ({area} m²)
+                  </strong>
+                </div>
+              </div>
+
+              {/* 4 Chỉ Số Bóc Tách Trọng Tâm */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-0.5">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Khung sắt hộp 25×25</span>
+                  <strong className="text-sm font-bold text-slate-900 font-mono">
+                    {currentBomCalc.steelBars6m} cây 6m
+                  </strong>
+                  <span className="text-[10px] text-slate-400 block font-mono">({currentBomCalc.steelMeters}m sắt)</span>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-0.5">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Tấm Alu / Bạt UV</span>
+                  <strong className="text-sm font-bold text-slate-900 font-mono">
+                    {currentBomCalc.aluSheetsCount} tấm
+                  </strong>
+                  <span className="text-[10px] text-slate-400 block font-mono">({currentBomCalc.aluPurchasedSqm} m²)</span>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-0.5">
+                  <span className="text-[10px] text-slate-500 font-semibold block">Module LED & Nguồn</span>
+                  <strong className="text-sm font-bold text-slate-900 font-mono">
+                    {currentBomCalc.totalLeds} bóng
+                  </strong>
+                  <span className="text-[10px] text-slate-400 block font-mono">({currentBomCalc.powerUnitsNeeded} bộ nguồn 400W)</span>
+                </div>
+
+                <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-200 space-y-0.5">
+                  <span className="text-[10px] text-purple-700 font-bold block">Tổng Chi Phí Dự Toán</span>
+                  <strong className="text-sm font-bold text-purple-900 font-mono">
+                    {currentBomCalc.totalEstimatedMaterialCost.toLocaleString("vi-VN")} đ
+                  </strong>
+                  <span className="text-[10px] text-purple-600 block">Vật tư xưởng bóc tách</span>
+                </div>
+              </div>
+
+              {/* Bảng Chi Tiết Vật Tư Dự Toán */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-2">Phân loại</th>
+                      <th className="p-2">Tên vật tư kỹ thuật</th>
+                      <th className="p-2 text-center">ĐVT</th>
+                      <th className="p-2 text-right">Số lượng</th>
+                      <th className="p-2 text-right">Đơn giá</th>
+                      <th className="p-2 text-right">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {currentBomCalc.items.map((it, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2 font-sans text-slate-500 font-medium">{it.category}</td>
+                        <td className="p-2 font-sans font-semibold text-slate-900">{it.itemName}</td>
+                        <td className="p-2 text-center text-slate-600">{it.unit}</td>
+                        <td className="p-2 text-right font-bold text-slate-800">{it.quantity}</td>
+                        <td className="p-2 text-right text-slate-600">{it.unitPrice.toLocaleString("vi-VN")} đ</td>
+                        <td className="p-2 text-right font-bold text-purple-900">{it.amount.toLocaleString("vi-VN")} đ</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200 gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push("/dinh-muc-bom")}
+                    className="text-xs gap-1.5 cursor-pointer"
+                  >
+                    <TableIcon className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Mở Bảng Định Mức BOM</span>
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBomSurvey(null)}
+                    className="text-xs cursor-pointer"
+                  >
+                    Đóng
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleConfirmSaveBom(bomSurvey)}
+                    disabled={savingBom}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs gap-1.5 font-bold cursor-pointer"
+                  >
+                    {savingBom ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                    <span>{savingBom ? "Đang lưu..." : "Lưu Vào Hệ Thống BOM"}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* MODAL 2: BÁO GIÁ DỰ TOÁN NHANH (INSTANT MODAL 0MS) */}
+      <Modal
+        isOpen={Boolean(quoteSurvey)}
+        onClose={() => setQuoteSurvey(null)}
+        title="Báo Giá Dự Toán Nhanh Hiện Trường"
+        description={`Phiếu: ${quoteSurvey?.code || ""} • ${quoteSurvey?.metadata?.dealerName || quoteSurvey?.title || ""}`}
+        maxWidth="3xl"
+      >
+        {quoteSurvey && (() => {
+          const meta = quoteSurvey.metadata || {};
+          const area = Math.round((quoteSurvey.widthMeters * quoteSurvey.heightMeters) * 100) / 100;
+          const estUnitPrice = 1850000;
+          const subTotal = Math.round(area > 0 ? area * estUnitPrice : 5000000);
+          const taxAmount = Math.round(subTotal * 0.1);
+          const grandTotal = subTotal + taxAmount;
+          const items = getSurveyWorkItems(quoteSurvey);
+
+          return (
+            <div className="space-y-4 text-xs">
+              {/* Header Box */}
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex items-center justify-between flex-wrap gap-2">
+                <div className="space-y-0.5">
+                  <strong className="text-slate-900 font-bold uppercase text-sm block">
+                    {meta.dealerName || quoteSurvey.title}
+                  </strong>
+                  <div className="text-slate-600 flex items-center gap-2 text-[11px]">
+                    <span className="font-semibold text-blue-900">KV: {meta.regionKV || "HCM"}</span>
+                    <span>•</span>
+                    <span className="font-mono text-blue-700 font-bold">ĐT: {meta.dealerPhone || quoteSurvey.customerPhone || "—"}</span>
+                  </div>
+                  <div className="text-slate-500 text-[11px]">{meta.dealerAddress || quoteSurvey.address}</div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[10px] text-blue-700 font-semibold block uppercase">Tổng Dự Toán Thanh Toán</span>
+                  <strong className="font-mono text-lg font-extrabold text-blue-900">
+                    {grandTotal.toLocaleString("vi-VN")} đ
+                  </strong>
+                  <span className="text-[10px] text-slate-500 block">(Đã gồm 10% VAT)</span>
+                </div>
+              </div>
+
+              {/* Bảng Chi Tiết Dự Toán */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-2.5">Hạng mục công việc</th>
+                      <th className="p-2.5 text-center">ĐVT</th>
+                      <th className="p-2.5 text-right">Khối lượng</th>
+                      <th className="p-2.5 text-right">Đơn giá tham chiếu</th>
+                      <th className="p-2.5 text-right">Thành tiền (VND)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr>
+                      <td className="p-2.5">
+                        <strong className="text-slate-900 block">
+                          Gia công & Lắp dựng {meta.signMaterial || "Biển hiệu alu chữ nổi LED"}
+                        </strong>
+                        <span className="text-[11px] text-slate-500 block font-mono">
+                          Quy cách: {quoteSurvey.widthMeters}m × {quoteSurvey.heightMeters}m • Khung sắt mạ kẽm • LED module Hàn Quốc
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center font-mono">m²</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-slate-800">{area > 0 ? area : 1}</td>
+                      <td className="p-2.5 text-right font-mono text-slate-600">{estUnitPrice.toLocaleString("vi-VN")} đ</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-blue-900">{subTotal.toLocaleString("vi-VN")} đ</td>
+                    </tr>
+                  </tbody>
+                  <tfoot className="bg-slate-50 font-semibold text-[11px] border-t border-slate-200">
+                    <tr>
+                      <td colSpan={4} className="p-2 text-right text-slate-600">Tiền hàng trước thuế:</td>
+                      <td className="p-2 text-right font-mono text-slate-900 font-bold">{subTotal.toLocaleString("vi-VN")} đ</td>
+                    </tr>
+                    <tr>
+                      <td colSpan={4} className="p-2 text-right text-slate-600">Thuế GTGT (VAT 10%):</td>
+                      <td className="p-2 text-right font-mono text-slate-700">{taxAmount.toLocaleString("vi-VN")} đ</td>
+                    </tr>
+                    <tr className="border-t border-slate-200 text-xs bg-blue-50/50">
+                      <td colSpan={4} className="p-2.5 text-right font-bold text-blue-950">TỔNG CỘNG THANH TOÁN:</td>
+                      <td className="p-2.5 text-right font-mono font-extrabold text-blue-900 text-sm">{grandTotal.toLocaleString("vi-VN")} đ</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Các hạng mục đo đạc đi kèm */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <span className="font-bold text-slate-800 text-[11px] block">Nội dung ghi nhận thực địa:</span>
+                <div className="space-y-0.5">
+                  {items.map((it, idx) => (
+                    <div key={idx} className="text-rose-700 font-medium text-[11px] flex items-start gap-1">
+                      <span className="text-rose-600 font-bold">•</span>
+                      <span>{it}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200 gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push("/bao-gia")}
+                  className="text-xs gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Mở Danh Sách Báo Giá</span>
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setQuoteSurvey(null)}
+                    className="text-xs cursor-pointer"
+                  >
+                    Đóng
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleConfirmConvertToQuote(quoteSurvey)}
+                    disabled={convertingId === quoteSurvey.id}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs gap-1.5 font-bold cursor-pointer"
+                  >
+                    {convertingId === quoteSurvey.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>{convertingId === quoteSurvey.id ? "Đang tạo báo giá..." : "Tạo Báo Giá Chính Thức (1-Click)"}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* MODAL TẠO & SỬA KHỐI LƯỢNG CÔNG VIỆC THỰC CHIẾN */}
       <Modal
@@ -1617,7 +1925,7 @@ export default function SiteSurveyPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     size="sm"
-                    onClick={() => handleCreateBom(selectedSurvey)}
+                    onClick={() => setBomSurvey(selectedSurvey)}
                     className="bg-purple-600 hover:bg-purple-700 text-white text-xs gap-1.5 font-semibold cursor-pointer"
                   >
                     <Zap className="w-3.5 h-3.5" />
@@ -1662,14 +1970,11 @@ export default function SiteSurveyPage() {
 
                   <Button
                     size="sm"
-                    onClick={() => handleConvertToQuote(selectedSurvey)}
-                    disabled={convertingId === selectedSurvey.id}
+                    onClick={() => setQuoteSurvey(selectedSurvey)}
                     className="bg-blue-600 text-white hover:bg-blue-700 text-xs gap-1.5 shadow-2xs font-semibold cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>
-                      {convertingId === selectedSurvey.id ? "Đang chuyển..." : "Tạo Báo Giá Dự Toán"}
-                    </span>
+                    <span>Báo Giá Dự Toán</span>
                   </Button>
                 </div>
               </div>
